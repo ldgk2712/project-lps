@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Giải Bài toán QHTT</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Chương trình Giải Bài toán Quy hoạch Tuyến tính (QHTT)</h1>
+        <form method="POST">
+            <h2>Định nghĩa Bài toán</h2>
+            
+            <div class="form-group">
+                <label>Số lượng biến (n):</label>
+                <input type="number" name="num_vars" value="{{ num_vars }}" min="1" required>
+                <label>Số lượng ràng buộc (m):</label>
+                <input type="number" name="num_constraints" value="{{ num_constraints }}" min="1" required>
+            </div>
+            
+            <div class="form-group">
+                <h3>Hàm mục tiêu (f(x) = c₁x₁ + ... + cₙxₙ):</h3>
+                <label>Loại:</label>
+                <select name="objective_type">
+                    <option value="Max">Max</option>
+                    <option value="Min">Min</option>
+                </select>
+                <div class="coefficients">
+                    {% for i in range(num_vars) %}
+                    <label>c{{ i+1 }}:</label>
+                    <input type="number" name="c{{ i }}" value="0" step="any" required>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <h3>Các ràng buộc (Ax op b):</h3>
+                {% for i in range(num_constraints) %}
+                <div class="constraint">
+                    {% for j in range(num_vars) %}
+                    <input type="number" name="A{{ i }}_{{ j }}" value="0" step="any" required>
+                    <span>x{{ j+1 }}</span>
+                    {% if j < num_vars-1 %}<span>+</span>{% endif %}
+                    {% endfor %}
+                    <select name="constraint_type{{ i }}">
+                        <option value="<=">≤</option>
+                        <option value=">=">≥</option>
+                        <option value="=">=</option>
+                    </select>
+                    <input type="number" name="b{{ i }}" value="0" step="any" required>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <div class="form-group">
+                <h3>Loại biến:</h3>
+                {% for i in range(num_vars) %}
+                <label>x{{ i+1 }}:</label>
+                <select name="var_type{{ i }}">
+                    <option value=">=0">≥ 0</option>
+                    <option value="<=0">≤ 0</option>
+                    <option value="URS">URS</option>
+                </select>
+                {% endfor %}
+            </div>
+            
+            <button type="submit">Giải Bài toán QHTT</button>
+        </form>
+    </div>
+</body>
+</html>

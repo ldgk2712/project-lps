@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kết quả QHTT</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Kết quả Giải Bài toán QHTT</h1>
+        
+        <h2>Kết Luận</h2>
+        <p><strong>Trạng thái:</strong> {{ result.status }}</p>
+        {% if result.status == 'Tối ưu (Optimal)' %}
+        <p><strong>Nghiệm tối ưu:</strong>
+            {% for key, value in result.solution.items() %}
+            {{ key }} = {{ value|round(4) }}
+            {% endfor %}
+        </p>
+        <p><strong>Giá trị tối ưu:</strong> {{ result.objectiveValue|round(4) }}</p>
+        {% endif %}
+        
+        {% if plot_data %}
+        <h2>Hình ảnh hóa (Bài toán 2 biến)</h2>
+        <img src="data:image/png;base64,{{ plot_data }}" alt="Feasible Region">
+        {% endif %}
+        
+        <a href="/">Quay lại</a>
+    </div>
+</body>
+</html>
