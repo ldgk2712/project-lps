@@ -13,10 +13,16 @@
         {% if result.status == 'Tối ưu (Optimal)' %}
         <p><strong>Nghiệm tối ưu:</strong>
             {% for key, value in result.solution.items() %}
-            {{ key }} = {{ value|round(4) }}
+            {{ key }} = {{ value|round(4) if value is not none else value }}
             {% endfor %}
         </p>
-        <p><strong>Giá trị tối ưu:</strong> {{ result.objectiveValue|round(4) }}</p>
+        <p><strong>Giá trị tối ưu:</strong> 
+            {% if result.objectiveValue is not none %}
+            {{ result.objectiveValue|round(4) }}
+            {% else %}
+            Không xác định
+            {% endif %}
+        </p>
         {% endif %}
         
         {% if plot_data %}

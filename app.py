@@ -8,17 +8,14 @@ app = Flask(__name__)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    # Giá trị mặc định
     default_num_vars = 2
     default_num_constraints = 2
     
     if request.method == 'POST':
         try:
-            # Lấy dữ liệu từ form
             num_vars_input = request.form.get('num_vars', default_num_vars)
             num_constraints_input = request.form.get('num_constraints', default_num_constraints)
             
-            # Kiểm tra số nguyên dương
             if not num_vars_input.isdigit() or int(num_vars_input) < 1:
                 return render_template('index.html', 
                                      num_vars=num_vars_input, 
@@ -33,11 +30,9 @@ def index():
             num_vars = int(num_vars_input)
             num_constraints = int(num_constraints_input)
             
-            # Nếu nhấn "Cập nhật", chỉ render lại form
             if 'update' in request.form:
                 return render_template('index.html', num_vars=num_vars, num_constraints=num_constraints)
             
-            # Xử lý giải bài toán
             c = [float(request.form[f'c{i}']) for i in range(num_vars)]
             A = []
             b = []
@@ -49,10 +44,15 @@ def index():
                 constraint_types.append(request.form[f'constraint_type{i}'])
             variable_types = [request.form[f'var_type{i}'] for i in range(num_vars)]
             
-            # Giải bài toán
             result = solve_simplex(A, b, c, constraint_types, request.form['objective_type'], variable_types)
             
-            # Tạo hình ảnh hóa
+            # Kiểm tra trạng thái bài toán
+            if result['status'].startswith('Lỗi'):
+                return render_template('index.html', 
+                                     num_vars=num_vars, 
+                                     num_constraints=num_constraints, 
+                                     error=result['status'])
+            
             plot_data = None
             if num_vars == 2 and result['status'] == 'Tối ưu (Optimal)':
                 plot_data = create_plot(A, b, constraint_types, c, request.form['objective_type'], result['solution'])
@@ -60,13 +60,11 @@ def index():
             return render_template('result.html', result=result, plot_data=plot_data)
         
         except (ValueError, KeyError) as e:
-            # Lỗi khác (như hệ số không phải số)
             return render_template('index.html', 
                                  num_vars=num_vars_input, 
                                  num_constraints=num_constraints_input, 
                                  error="Vui lòng nhập đầy đủ và đúng định dạng số (hệ số phải là số thực, số biến/ràng buộc phải là số nguyên dương).")
     
-    # GET request: Form mặc định
     return render_template('index.html', num_vars=default_num_vars, num_constraints=default_num_constraints)
 
 def create_plot(A, b, constraint_types, c, objective_type, solution):
