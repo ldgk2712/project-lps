@@ -7,25 +7,29 @@
 <body>
     <div class="container">
         <h1>Chương trình Giải Bài toán Quy hoạch Tuyến tính (QHTT)</h1>
+        {% if error %}
+        <p class="error">{{ error }}</p>
+        {% endif %}
         <form method="POST">
-            <h2>Định nghĩa Bài toán</h2>
+            <h2>1. Định nghĩa Bài toán</h2>
             
             <div class="form-group">
                 <label>Số lượng biến (n):</label>
-                <input type="number" name="num_vars" value="{{ num_vars }}" min="1" required>
+                <input type="number" name="num_vars" value="{{ num_vars }}" min="1" step="1" required>
                 <label>Số lượng ràng buộc (m):</label>
-                <input type="number" name="num_constraints" value="{{ num_constraints }}" min="1" required>
+                <input type="number" name="num_constraints" value="{{ num_constraints }}" min="1" step="1" required>
+                <button type="submit" name="update">Cập nhật</button>
             </div>
             
             <div class="form-group">
                 <h3>Hàm mục tiêu (f(x) = c₁x₁ + ... + cₙxₙ):</h3>
                 <label>Loại:</label>
                 <select name="objective_type">
-                    <option value="Max">Max</option>
-                    <option value="Min">Min</option>
+                    <option value="Max" {% if objective_type == 'Max' %}selected{% endif %}>Max</option>
+                    <option value="Min" {% if objective_type == 'Min' %}selected{% endif %}>Min</option>
                 </select>
                 <div class="coefficients">
-                    {% for i in range(num_vars) %}
+                    {% for i in range(num_vars|int) %}
                     <label>c{{ i+1 }}:</label>
                     <input type="number" name="c{{ i }}" value="0" step="any" required>
                     {% endfor %}
@@ -34,12 +38,12 @@
             
             <div class="form-group">
                 <h3>Các ràng buộc (Ax op b):</h3>
-                {% for i in range(num_constraints) %}
+                {% for i in range(num_constraints|int) %}
                 <div class="constraint">
-                    {% for j in range(num_vars) %}
+                    {% for j in range(num_vars|int) %}
                     <input type="number" name="A{{ i }}_{{ j }}" value="0" step="any" required>
                     <span>x{{ j+1 }}</span>
-                    {% if j < num_vars-1 %}<span>+</span>{% endif %}
+                    {% if j < num_vars|int-1 %}<span>+</span>{% endif %}
                     {% endfor %}
                     <select name="constraint_type{{ i }}">
                         <option value="<=">≤</option>
@@ -53,7 +57,7 @@
             
             <div class="form-group">
                 <h3>Loại biến:</h3>
-                {% for i in range(num_vars) %}
+                {% for i in range(num_vars|int) %}
                 <label>x{{ i+1 }}:</label>
                 <select name="var_type{{ i }}">
                     <option value=">=0">≥ 0</option>
@@ -63,7 +67,7 @@
                 {% endfor %}
             </div>
             
-            <button type="submit">Giải Bài toán QHTT</button>
+            <button type="submit" name="solve">Giải Bài toán QHTT</button>
         </form>
     </div>
 </body>
