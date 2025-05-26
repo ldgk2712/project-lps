@@ -23,6 +23,19 @@
             Không xác định
             {% endif %}
         </p>
+        {% if result.multiple_solutions %}
+        <p><strong>Chú ý:</strong> Bài toán có vô số nghiệm. Các nghiệm tối ưu khác:</p>
+        <ul>
+            {% for sol, val in result.all_solutions[1:] %}
+            <li>
+                {% for key, value in sol.items() %}
+                {{ key }} = {{ value|round(4) if value is not none else value }}
+                {% endfor %}
+                (Z = {{ val|round(4) if val is not none else 'Không xác định' }})
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
         {% endif %}
         
         {% if plot_data %}
