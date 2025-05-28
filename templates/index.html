@@ -6,12 +6,12 @@
 </head>
 <body>
     <div class="container">
-        <h1>Chương trình Giải Bài toán Quy hoạch Tuyến tính (QHTT)</h1>
+        <h1>Chương trình Giải Bài toán Quy hoạch Tuyến tính</h1>
         {% if error %}
         <p class="error">{{ error }}</p>
         {% endif %}
         <form method="POST">
-            <h2>1. Định nghĩa Bài toán</h2>
+            <h2>Định nghĩa Bài toán</h2>
             
             <div class="form-group">
                 <label>Số lượng biến (n):</label>
@@ -37,7 +37,7 @@
             </div>
             
             <div class="form-group">
-                <h3>Các ràng buộc (Ax op b):</h3>
+                <h3>Các ràng buộc:</h3>
                 {% for i in range(num_constraints|int) %}
                 <div class="constraint">
                     {% for j in range(num_vars|int) %}
@@ -62,7 +62,7 @@
                 <select name="var_type{{ i }}">
                     <option value=">=0">≥ 0</option>
                     <option value="<=0">≤ 0</option>
-                    <option value="URS">URS</option>
+                    <option value="URS">tự do</option>
                 </select>
                 {% endfor %}
             </div>

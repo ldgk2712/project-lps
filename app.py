@@ -2,10 +2,10 @@ from flask import Flask, render_template, request, send_file
 import io
 import base64
 from simplex import solve_simplex
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')  # Đặt backend Agg
 
 app = Flask(__name__)
 
@@ -16,10 +16,10 @@ def index():
 
     if request.method == 'POST':
         try:
-            num_vars_input = request.form.get('num_vars', default_num_vars)
-            num_constraints_input = request.form.get('num_constraints', default_num_constraints)
+            num_vars_input = request.form.get('num_vars', str(default_num_vars))
+            num_constraints_input = request.form.get('num_constraints', str(default_num_constraints))
 
-            # validate inputs
+            # Validate inputs
             if not num_vars_input.isdigit() or int(num_vars_input) < 1:
                 return render_template('index.html', num_vars=num_vars_input,
                                        num_constraints=num_constraints_input,
@@ -31,28 +31,79 @@ def index():
 
             num_vars = int(num_vars_input)
             num_constraints = int(num_constraints_input)
-            if 'update' in request.form:
-                return render_template('index.html', num_vars=num_vars,
-                                       num_constraints=num_constraints)
 
-            # read parameters
-            c = [float(request.form[f'c{i}']) for i in range(num_vars)]
+            if 'update' in request.form:
+                return render_template('index.html', num_vars=num_vars, num_constraints=num_constraints)
+
+            # Read parameters
+            c = []
+            for i in range(num_vars):
+                val = request.form.get(f'c{i}')
+                if val is None or val.strip() == '':
+                    return render_template('index.html', num_vars=num_vars,
+                                           num_constraints=num_constraints,
+                                           error=f"Hệ số mục tiêu c{i} bị thiếu hoặc rỗng.")
+                try:
+                    c.append(float(val))
+                except ValueError:
+                    return render_template('index.html', num_vars=num_vars,
+                                           num_constraints=num_constraints,
+                                           error=f"Hệ số mục tiêu c{i} ({val}) không phải số hợp lệ.")
+
             A, b, constraint_types = [], [], []
             for i in range(num_constraints):
-                A.append([float(request.form[f'A{i}_{j}']) for j in range(num_vars)])
-                b.append(float(request.form[f'b{i}']))
-                constraint_types.append(request.form[f'constraint_type{i}'])
-            variable_types = [request.form[f'var_type{i}'] for i in range(num_vars)]
+                row = []
+                for j in range(num_vars):
+                    val = request.form.get(f'A{i}_{j}')
+                    if val is None or val.strip() == '':
+                        return render_template('index.html', num_vars=num_vars,
+                                               num_constraints=num_constraints,
+                                               error=f"Hệ số A{i}_{j} bị thiếu hoặc rỗng.")
+                    try:
+                        row.append(float(val))
+                    except ValueError:
+                        return render_template('index.html', num_vars=num_vars,
+                                               num_constraints=num_constraints,
+                                               error=f"Hệ số A{i}_{j} ({val}) không phải số hợp lệ.")
+                A.append(row)
 
-            # solve
+                val = request.form.get(f'b{i}')
+                if val is None or val.strip() == '':
+                    return render_template('index.html', num_vars=num_vars,
+                                           num_constraints=num_constraints,
+                                           error=f"Hằng số b{i} bị thiếu hoặc rỗng.")
+                try:
+                    b.append(float(val))
+                except ValueError:
+                    return render_template('index.html', num_vars=num_vars,
+                                           num_constraints=num_constraints,
+                                           error=f"Hằng số b{i} ({val}) không phải số hợp lệ.")
+
+                constraint_type = request.form.get(f'constraint_type{i}')
+                if constraint_type not in ['<=', '>=', '=']:
+                    return render_template('index.html', num_vars=num_vars,
+                                           num_constraints=num_constraints,
+                                           error=f"Loại ràng buộc {i} không hợp lệ.")
+                constraint_types.append(constraint_type)
+
+            variable_types = []
+            for i in range(num_vars):
+                var_type = request.form.get(f'var_type{i}')
+                if var_type not in ['>=0', '<=0', 'URS']:
+                    return render_template('index.html', num_vars=num_vars,
+                                           num_constraints=num_constraints,
+                                           error=f"Loại biến var_type{i} không hợp lệ.")
+                variable_types.append(var_type)
+
+            # Solve
             result = solve_simplex(A, b, c, constraint_types,
-                                   request.form['objective_type'], variable_types)
+                                   request.form.get('objective_type', 'max'), variable_types)
             if result['status'].startswith('Lỗi'):
                 return render_template('index.html', num_vars=num_vars,
                                        num_constraints=num_constraints,
                                        error=result['status'])
 
-            # plot if 2 variables
+            # Plot if 2 variables
             plot_data = None
             if num_vars == 2 and result['status'] == 'Tối ưu (Optimal)':
                 plot_data = create_plot(A, b, constraint_types,
@@ -60,16 +111,19 @@ def index():
 
             return render_template('result.html', result=result, plot_data=plot_data)
 
-        except (ValueError, KeyError):
+        except Exception as e:
             return render_template('index.html', num_vars=num_vars_input,
                                    num_constraints=num_constraints_input,
-                                   error="Vui lòng nhập đầy đủ và đúng định dạng số.")
+                                   error=f"Lỗi: {str(e)}")
 
     return render_template('index.html', num_vars=default_num_vars,
                            num_constraints=default_num_constraints)
 
-
 def create_plot(A, b, constraint_types, c, solution, variable_types):
+    # Bật LaTeX rendering
+    # plt.rc('text', usetex=True)
+    plt.rc('font', family='serif')
+    
     fig, ax = plt.subplots(figsize=(8, 8))
 
     # Compute all candidate vertices (pairwise intersections)
@@ -192,7 +246,39 @@ def create_plot(A, b, constraint_types, c, solution, variable_types):
     # Plot constraint lines
     x_line = np.linspace(x_min, x_max, 400)
     for k, (ak1, ak2) in enumerate(A):
-        label = f'Ràng buộc {k+1}'
+        # Tạo phương trình LaTeX
+        terms = []
+        if abs(ak1) > 1e-9:
+            if ak1 == 1:
+                terms.append('x_1')
+            elif ak1 == -1:
+                terms.append('-x_1')
+            else:
+                if float(ak1).is_integer():
+                    terms.append(f'{int(ak1)}x_1')
+                else:
+                    terms.append(f'{ak1:.2f}x_1')
+        if abs(ak2) > 1e-9:
+            if ak2 == 1:
+                terms.append('+x_2' if not terms else 'x_2')
+            elif ak2 == -1:
+                terms.append('-x_2')
+            else:
+                if float(ak2).is_integer():
+                    sign = '+' if ak2 > 0 and terms else ''
+                    terms.append(f'{sign}{int(ak2)}x_2')
+                else:
+                    sign = '+' if ak2 > 0 and terms else ''
+                    terms.append(f'{sign}{ak2:.2f}x_2')
+        eq = ' + '.join(terms).replace('+ -', '- ') if terms else '0'
+        op = {'<=': '≤', '>=': '≥', '=': '='}[constraint_types[k]]  # Dùng Unicode thay LaTeX
+        b_val = b[k]
+        if float(b_val).is_integer():
+            b_str = str(int(b_val))
+        else:
+            b_str = f'{b_val:.2f}' if b_val > 0 else f'{b_val:.2f}'
+        label = fr'$\ {eq}\ {op}\ {b_str}$'
+
         if abs(ak2) > 1e-9:
             y_line = (b[k] - ak1 * x_line) / ak2
             ax.plot(x_line, y_line, linewidth=2, label=label)
@@ -246,14 +332,6 @@ def create_plot(A, b, constraint_types, c, solution, variable_types):
             else:
                 ax.quiver((x_min + x_max) / 2, 0, 0, -1, angles='xy', scale_units='xy', scale=4, color='blue', headlength=7, headwidth=4)
                 ax.text((x_min + x_max) / 2 + 0.1, 0.1, f'(x{idx+1} ≤ 0)', color='blue')
-
-    # Objective line at optimum
-    # if 'objectiveValue' in solution:
-    #     Z = solution['objectiveValue']
-    #     if abs(c[1]) > 1e-9:
-    #         ax.plot(x_line, (Z - c[0] * x_line) / c[1], 'k', label=f'Z*={Z:.2f}')
-    #     elif abs(c[0]) > 1e-9:
-    #         ax.axvline(Z / c[0], color='k', label=f'Z*={Z:.2f}')
 
     # Optimal point
     if solution:
