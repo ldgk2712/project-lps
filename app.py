@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, send_file
 import io
 import base64
-from simplex import solve_simplex
+from simplex import auto_simplex
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -96,7 +96,7 @@ def index():
                 variable_types.append(var_type)
 
             # Solve
-            result = solve_simplex(A, b, c, constraint_types,
+            result = auto_simplex(A, b, c, constraint_types,
                                    request.form.get('objective_type', 'max'), variable_types)
             if result['status'].startswith('Lỗi'):
                 return render_template('index.html', num_vars=num_vars,
@@ -212,7 +212,7 @@ def create_plot(A, b, constraint_types, c, solution, variable_types):
 
     # Determine plot bounds
     xs, ys = zip(*vertices)
-    margin = 3.0
+    margin = 7.5
     x_min, x_max = min(xs) - margin, max(xs) + margin
     y_min, y_max = min(ys) - margin, max(ys) + margin
 
@@ -260,7 +260,7 @@ def create_plot(A, b, constraint_types, c, solution, variable_types):
                     terms.append(f'{ak1:.2f}x_1')
         if abs(ak2) > 1e-9:
             if ak2 == 1:
-                terms.append('+x_2' if not terms else 'x_2')
+                terms.append('+x_2' if terms else 'x_2')
             elif ak2 == -1:
                 terms.append('-x_2')
             else:
@@ -270,7 +270,7 @@ def create_plot(A, b, constraint_types, c, solution, variable_types):
                 else:
                     sign = '+' if ak2 > 0 and terms else ''
                     terms.append(f'{sign}{ak2:.2f}x_2')
-        eq = ' + '.join(terms).replace('+ -', '- ') if terms else '0'
+        eq = ' '.join(terms) if terms else '0'
         op = {'<=': '≤', '>=': '≥', '=': '='}[constraint_types[k]]  # Dùng Unicode thay LaTeX
         b_val = b[k]
         if float(b_val).is_integer():
@@ -313,24 +313,24 @@ def create_plot(A, b, constraint_types, c, solution, variable_types):
         dx, dy = -ak1 / norm, -ak2 / norm
         if constraint_types[k] == '>=':
             dx, dy = -dx, -dy
-        ax.quiver(x0, y0, dx, dy, angles='xy', scale_units='xy', scale=4, color='blue', headlength=7, headwidth=4)
+        ax.quiver(x0, y0, dx, dy, angles='xy', scale_units='xy', scale=2, color='blue', headlength=7, headwidth=4)
         ax.text(x0 + 0.1, y0 + 0.1, f'({k+1})', color='blue')
     
     # Arrows for variable bounds
     for idx, vt in enumerate(variable_types):
         if vt == '>=0':
             if idx == 0:
-                ax.quiver(0, (y_min + y_max) / 2, 1, 0, angles='xy', scale_units='xy', scale=4, color='blue', headlength=7, headwidth=4)
+                ax.quiver(0, (y_min + y_max) / 2, 1, 0, angles='xy', scale_units='xy', scale=2, color='blue', headlength=7, headwidth=4)
                 ax.text(0.1, (y_min + y_max) / 2 + 0.1, f'(x{idx+1} ≥ 0)', color='blue')
             else:
-                ax.quiver((x_min + x_max) / 2, 0, 0, 1, angles='xy', scale_units='xy', scale=4, color='blue', headlength=7, headwidth=4)
+                ax.quiver((x_min + x_max) / 2, 0, 0, 1, angles='xy', scale_units='xy', scale=2, color='blue', headlength=7, headwidth=4)
                 ax.text((x_min + x_max) / 2 + 0.1, 0.1, f'(x{idx+1} ≥ 0)', color='blue')
         elif vt == '<=0':
             if idx == 0:
-                ax.quiver(0, (y_min + y_max) / 2, -1, 0, angles='xy', scale_units='xy', scale=4, color='blue', headlength=7, headwidth=4)
+                ax.quiver(0, (y_min + y_max) / 2, -1, 0, angles='xy', scale_units='xy', scale=2, color='blue', headlength=7, headwidth=4)
                 ax.text(0.1, (y_min + y_max) / 2 + 0.1, f'(x{idx+1} ≤ 0)', color='blue')
             else:
-                ax.quiver((x_min + x_max) / 2, 0, 0, -1, angles='xy', scale_units='xy', scale=4, color='blue', headlength=7, headwidth=4)
+                ax.quiver((x_min + x_max) / 2, 0, 0, -1, angles='xy', scale_units='xy', scale=2, color='blue', headlength=7, headwidth=4)
                 ax.text((x_min + x_max) / 2 + 0.1, 0.1, f'(x{idx+1} ≤ 0)', color='blue')
 
     # Optimal point

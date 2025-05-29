@@ -1,86 +1,149 @@
-import numpy as np
-import matplotlib.pyplot as plt
+from sympy import symbols, simplify, solve, Symbol, S
+from typing import Dict, Any
 
-# Tạo lưới tọa độ
-x1 = np.linspace(-8, 2, 400)
-x2 = np.linspace(-5, 2, 400)
-X1, X2 = np.meshgrid(x1, x2)
-
-# Các ràng buộc
-ineq1 = (-X1 - 2*X2 <= 6)   # Bất đẳng thức (1)
-ineq2 = (X1 - 2*X2 <= 4)    # Bất đẳng thức (2)
-ineq3 = (-X1 + X2 <= 1)     # Bất đẳng thức (3)
-ineq4 = (X1 <= 0)           # x1 <= 0
-ineq5 = (X2 <= 0)           # x2 <= 0
-
-# Miền thỏa tất cả điều kiện
-feasible_region = ineq1 & ineq2 & ineq3 & ineq4 & ineq5
-
-# Vẽ miền nghiệm
-plt.figure(figsize=(8, 8))
-plt.contourf(X1, X2, feasible_region, levels=[0.5, 1], colors=['#cccccc'], alpha=0.8)
-
-# Vẽ các đường biên (boundary)
-x = np.linspace(-8, 2, 400)
-plt.plot(x, (-x - 6)/2, label='(1): $-x_1 - 2x_2 \\leq 6$')   # Biên (1)
-plt.plot(x, (x - 4)/2, label='(2): $x_1 - 2x_2 \\leq 4$')     # Biên (2)
-plt.plot(x, (-x - 1)/(-1), label='(3): $-x_1 + x_2 \\leq 1$')         # Biên (3)
-plt.axvline(0, color='k', label='(4): $x_1 \\leq 0$')  # Biên (4)
-plt.axhline(0, color='k', label='(5): $x_2 \\leq 0$')   # Biên (5)
-
-# Giao điểm vùng nghiệm
-plt.xlim(-7, 2)
-plt.ylim(-4, 2)
-plt.xlabel('$x_1$')
-plt.ylabel('$x_2$')
-plt.axhline(0, color='black')
-plt.axvline(0, color='black')
-plt.grid(True)
-plt.legend()
-plt.title("Miền thỏa của hệ bất phương trình")
-# Mũi tên chỉ hướng miền nghiệm của từng bất đẳng thức
-# Tính điểm giữa mỗi đường để vẽ mũi tên pháp tuyến
-
-def draw_constraint_arrow(func, a, b, c, x_range, label, color='blue', scale=3, eps=0.1):
+def auto_simplex(A, b, c, problem_type='min'):
     """
-    Vẽ mũi tên pháp tuyến theo hướng MIỀN THỎA của bất phương trình ax1 + bx2 <= c
-
-    func: hàm tính x2 = f(x1) (biểu diễn đường biên)
-    a, b, c: hệ số trong bất phương trình ax1 + bx2 <= c
-    x_range: khoảng x1 để chọn điểm vẽ
+    Giải bài toán quy hoạch tuyến tính bằng phương pháp đơn hình
+    
+    Args:
+        A: Ma trận hệ số ràng buộc
+        b: Vector vế phải
+        c: Vector hệ số hàm mục tiêu
+        problem_type: 'min' hoặc 'max'
     """
-    x_arrow = np.mean(x_range)
-    y_arrow = func(x_arrow)
+    # Nếu là bài toán max, chuyển thành min bằng cách đổi dấu c
+    original_type = problem_type
+    if problem_type == 'max':
+        c = [-coeff for coeff in c]
+        print(f"Chuyển bài toán MAX thành MIN: c = {c}")
+    
+    m, n = len(A), len(A[0])
+    x_syms = list(symbols(f'x1:{n+1}'))
+    w_syms = list(symbols(f'w1:{m+1}'))
 
-    # vector pháp tuyến (a, b)
-    norm = np.sqrt(a**2 + b**2)
-    dx, dy = a / norm, b / norm
+    # Khởi tạo bảng đơn hình
+    step = 0
+    exprs: Dict[str, Any] = {}
+    current_exprs = {}
+    for i in range(m):
+        lhs = sum(A[i][j] * x_syms[j] for j in range(n))
+        current_exprs[str(w_syms[i])] = simplify(b[i] - lhs)
+    z_expr = simplify(-sum(c[j] * x_syms[j] for j in range(n)) + sum(0 * w for w in w_syms))
+    current_exprs['z'] = z_expr
+    exprs[f'Step {step}'] = current_exprs.copy()
 
-    # kiểm tra điểm test gần đường theo hướng pháp tuyến
-    x_test = x_arrow + eps * dx
-    y_test = y_arrow + eps * dy
-    lhs = a * x_test + b * y_test
+    basic_vars = [str(w) for w in w_syms]
+    non_basic_vars = [str(x) for x in x_syms]
 
-    if lhs > c:  # nếu không thỏa, đảo hướng
-        dx, dy = -dx, -dy
+    while True:
+        z_expr = current_exprs['z']
+        # Chọn biến vào: hệ số âm nhất
+        entering = None
+        max_coeff = S.Zero
+        for x in non_basic_vars:
+            coeff = z_expr.coeff(Symbol(x))
+            if coeff < 0 and coeff < max_coeff:
+                max_coeff = coeff
+                entering = x
 
-    plt.quiver(x_arrow, y_arrow, dx, dy, angles='xy', scale_units='xy', scale=scale, color=color)
-    plt.text(x_arrow + 0.2, y_arrow + 0.2, label, color=color)
+        if entering is None or max_coeff == 0:
+            print("Đã đạt nghiệm tối ưu.")
+            break
 
+        # Chọn biến ra: tỷ số |b_i / a_ij| nhỏ nhất, b_i >= 0, a_ij < 0
+        min_ratio = float('inf')
+        leaving = None
+        for w in basic_vars:
+            expr = current_exprs[w]
+            coeff = expr.coeff(Symbol(entering))
+            if coeff < 0:
+                const = expr.subs([(Symbol(x), 0) for x in non_basic_vars])
+                if const >= 0:
+                    ratio = abs(const / coeff)
+                    if ratio < min_ratio:
+                        min_ratio = ratio
+                        leaving = w
 
-# (1) -x1 - 2x2 <= 6 → x2 = (-x1 - 6)/2
-draw_constraint_arrow(lambda x: (-x - 6) / 2, a=-1, b=-2, c=6, x_range=[-6, -2], label='(1)')
+        if leaving is None:
+            break  # Không còn biến ra hợp lệ
 
-# (2) x1 - 2x2 <= 4 → x2 = (x - 4)/2
-draw_constraint_arrow(lambda x: (x - 4) / 2, a=1, b=-2, c=4, x_range=[-3, 1], label='(2)')
+        # Pivot
+        step += 1
+        pivot_eq = current_exprs[leaving]
+        # Giải để tìm entering, giữ leaving trong biểu thức
+        pivot_solutions = solve(pivot_eq - Symbol(leaving), Symbol(entering))
+        if not pivot_solutions:
+            print(f"Không thể pivot tại bước {step}. Kiểm tra biểu thức: {pivot_eq}")
+            break
+        pivot_expr = pivot_solutions[0]
 
-# (3) -x1 + x2 <= 1 → x2 = x + 1
-draw_constraint_arrow(lambda x: x + 1, a=-1, b=1, c=1, x_range=[-4, 0], label='(3)')
+        new_exprs = {}
+        # Cập nhật các biểu thức
+        for var, expr in current_exprs.items():
+            if var == leaving:
+                new_exprs[entering] = simplify(pivot_expr)
+            else:
+                # Thay entering vào expr, giữ leaving (w2)
+                new_exprs[var] = simplify(expr.subs(Symbol(entering), pivot_expr))
 
-# (4) x1 <= 0
-draw_constraint_arrow(lambda x: 0 * x, a=1, b=0, c=0, x_range=[0, 0], label='(4)')
+        # Cập nhật biến
+        basic_vars[basic_vars.index(leaving)] = entering
+        non_basic_vars[non_basic_vars.index(entering)] = leaving
+        if leaving not in non_basic_vars:
+            non_basic_vars.append(leaving)
 
-# (5) x2 <= 0
-draw_constraint_arrow(lambda x: 0, a=0, b=1, c=0, x_range=[-4, -4], label='(5)')
+        current_exprs = new_exprs
+        exprs[f'Step {step} ({entering} in, {leaving} out)'] = current_exprs.copy()
 
-plt.show()
+    # In kết quả
+    for title, content in exprs.items():
+        print(f"\n{title}")
+        for var, expr in content.items():
+            print(f"{var} = {expr}")
+
+    # In nghiệm tối ưu
+    final_step = list(exprs.keys())[-1]
+    optimal_z_prime = exprs[final_step]['z']
+    
+    # Tìm các biến không cơ bản (non-basic variables)
+    basic_vars_final = [var for var in exprs[final_step].keys() if var != 'z']
+    all_vars = [f'x{i}' for i in range(1, n+1)] + [f'w{i}' for i in range(1, m+1)]
+    non_basic_vars_final = [var for var in all_vars if var not in basic_vars_final]
+    
+    # Tính z' khi các biến không cơ bản = 0
+    z_prime_value = optimal_z_prime.subs([(Symbol(var), 0) for var in non_basic_vars_final])
+    z_optimal = z_prime_value
+    
+    # Nếu bài toán ban đầu là MAX, cần đổi dấu kết quả z
+    if original_type == 'max':
+        z_optimal = -z_optimal
+    
+    print(f"\nOptimal z ({original_type}): {z_optimal}")
+    print("Optimal solution:")
+    
+    # In giá trị các biến x (biến quyết định ban đầu)
+    for i in range(1, n+1):
+        var_name = f'x{i}'
+        if var_name in basic_vars_final:
+            # Biến cơ bản: tính giá trị khi non-basic = 0
+            var_expr = exprs[final_step][var_name]
+            var_value = var_expr.subs([(Symbol(var), 0) for var in non_basic_vars_final])
+            print(f"{var_name} = {var_value}")
+        else:
+            # Biến không cơ bản = 0
+            print(f"{var_name} = 0")
+
+    return exprs
+
+# Ví dụ sử dụng:
+print("=== Bài toán MIN ===")
+A = [[-3, 1], [1, 2]]
+b = [6, 4]
+c = [-1, 4]
+auto_simplex(A, b, c, 'min')
+
+print("\n\n=== Bài toán MAX ===")
+A = [[-3, 1], [1, 2]]
+b = [6, 4]
+c = [1, -4]  # Hệ số ban đầu cho bài toán MAX
+auto_simplex(A, b, c, 'max')

@@ -1,112 +1,147 @@
-from pulp import LpProblem, LpMaximize, LpMinimize, LpVariable, LpStatus, lpSum
+from sympy import symbols, simplify, solve, Symbol, S
+from typing import List, Dict, Tuple, Any, Union
 
-def solve_simplex(A, b, c, constraint_types, objective_type, variable_types):
-    # Kiểm tra hàm mục tiêu bằng 0
-    if all(coef == 0 for coef in c):
-        return {
-            'status': 'Lỗi: Hàm mục tiêu bằng 0',
-            'solution': {},
-            'objectiveValue': None,
-            'steps': [],
-            'multiple_solutions': False
-        }
-    
-    # Kiểm tra ràng buộc không xác định
-    all_zero_constraints = all(all(coef == 0 for coef in row) and b[i] == 0 for i, row in enumerate(A))
-    if all_zero_constraints:
-        return {
-            'status': 'Lỗi: Ràng buộc không xác định',
-            'solution': {},
-            'objectiveValue': None,
-            'steps': [],
-            'multiple_solutions': False
-        }
+"""simplex_patch.py – Fix objective-type handling (MAX/MIN)
 
-    # Tạo bài toán chính
-    prob = LpProblem("Linear_Programming", LpMaximize if objective_type == 'Max' else LpMinimize)
-    
-    # Tạo biến
-    vars = []
-    for i in range(len(c)):
-        if variable_types[i] == '>=0':
-            vars.append(LpVariable(f'x{i+1}', lowBound=0))
-        elif variable_types[i] == '<=0':
-            vars.append(LpVariable(f'x{i+1}', upBound=0))
+* Convert **MAX → MIN** by negating c when objective_type == 'max'.
+* Keep c as‑is for MIN.
+* Flip sign of z* back to MAX when returning.
+* Retains preprocessing of ≥ constraints and step-by-step printing.
+"""
+
+# ----------------------------- helpers --------------------------------------
+
+def _print_tableau(title: str, exprs: Dict[str, Any]) -> None:
+    ordered = sorted(k for k in exprs if k != 'z') + (['z'] if 'z' in exprs else [])
+    print(f"\n{title}")
+    for var in ordered:
+        print(f"  {var} = {exprs[var]}")
+
+
+def _preprocess(A: List[List[float]], b: List[float], constraint_types: List[str]) -> Tuple[List[List[float]], List[float]]:
+    """Convert every row to ≤ form by flipping ≥ rows."""
+    A_new, b_new = [], []
+    for row, bi, t in zip(A, b, constraint_types):
+        if t.strip() == '>=':
+            A_new.append([-a for a in row])
+            b_new.append(-bi)
         else:
-            vars.append(LpVariable(f'x{i+1}'))
-    
-    # Hàm mục tiêu
-    prob += lpSum(c[i] * vars[i] for i in range(len(c)))
-    
-    # Ràng buộc
-    for i in range(len(A)):
-        expr = lpSum(A[i][j] * vars[j] for j in range(len(A[i])))
-        if constraint_types[i] == '<=':
-            prob += expr <= b[i]
-        elif constraint_types[i] == '>=':
-            prob += expr >= b[i]
-        else:
-            prob += expr == b[i]
-    
-    # Giải bài toán
-    prob.solve()
-    
-    # Kết quả
-    status = LpStatus[prob.status]
-    solution = {f'x{i+1}': vars[i].varValue if vars[i].varValue is not None else 0 for i in range(len(vars))}
-    objective_value = prob.objective.value() if prob.objective.value() is not None else None
-    
-    # Kiểm tra trạng thái
-    if status not in ['Optimal', 'Infeasible', 'Unbounded']:
-        return {
-            'status': 'Lỗi: Bài toán không hợp lệ',
-            'solution': {},
-            'objectiveValue': None,
-            'steps': [],
-            'multiple_solutions': False
-        }
-    
-    # Kiểm tra vô số nghiệm (cho n=2)
-    multiple_solutions = False
-    solutions = [(solution, objective_value)]
-    
-    if status == 'Optimal' and len(c) == 2:  # Chỉ kiểm tra cho bài toán 2 biến
-        # Thử tìm nghiệm khác bằng cách thêm ràng buộc mới
-        for i in range(len(vars)):
-            prob_copy = LpProblem("Check_Multiple_Solutions", LpMaximize if objective_type == 'Max' else LpMinimize)
-            vars_copy = []
-            for j in range(len(c)):
-                if variable_types[j] == '>=0':
-                    vars_copy.append(LpVariable(f'x{j+1}', lowBound=0))
-                elif variable_types[j] == '<=0':
-                    vars_copy.append(LpVariable(f'x{j+1}', upBound=0))
-                else:
-                    vars_copy.append(LpVariable(f'x{j+1}'))
-            prob_copy += lpSum(c[j] * vars_copy[j] for j in range(len(c)))
-            for j in range(len(A)):
-                expr = lpSum(A[j][k] * vars_copy[k] for k in range(len(A[j])))
-                if constraint_types[j] == '<=':
-                    prob_copy += expr <= b[j]
-                elif constraint_types[j] == '>=':
-                    prob_copy += expr >= b[j]
-                else:
-                    prob_copy += expr == b[j]
-            # Thêm ràng buộc để tìm nghiệm khác
-            prob_copy += vars_copy[i] != solution[f'x{i+1}']
-            prob_copy.solve()
-            if LpStatus[prob_copy.status] == 'Optimal' and abs(prob_copy.objective.value() - objective_value) < 1e-6:
-                new_solution = {f'x{j+1}': vars_copy[j].varValue if vars_copy[j].varValue is not None else 0 for j in range(len(vars_copy))}
-                solutions.append((new_solution, prob_copy.objective.value()))
-                multiple_solutions = True
-                break
-    
-    result = {
-        'status': 'Tối ưu (Optimal)' if status == 'Optimal' else 'Vô nghiệm (Infeasible)' if status == 'Infeasible' else 'Vô hạn (Unbounded)',
-        'solution': solutions[0][0],  # Trả về nghiệm đầu tiên
-        'objectiveValue': objective_value,
-        'steps': [],
-        'multiple_solutions': multiple_solutions,
-        'all_solutions': solutions if multiple_solutions else []
+            A_new.append(row[:])
+            b_new.append(bi)
+    return A_new, b_new
+
+# --------------------------- core simplex -----------------------------------
+
+def _simplex_min(A: List[List[float]], b: List[float], c: List[float]) -> Tuple[str, Union[float, None], Dict[str, float], Dict[str, Any]]:
+    m, n = len(A), len(A[0])
+    x_syms = list(symbols(f"x1:{n+1}"))
+    w_syms = list(symbols(f"w1:{m+1}"))
+
+    step = 0
+    steps: Dict[str, Dict[str, Any]] = {}
+    cur: Dict[str, Any] = {}
+
+    # Step 0
+    for i in range(m):
+        cur[str(w_syms[i])] = simplify(b[i] - sum(A[i][j] * x_syms[j] for j in range(n)))
+    cur['z'] = simplify(-sum(c[j] * x_syms[j] for j in range(n)))
+    steps['Step 0'] = cur.copy()
+    _print_tableau('Step 0', cur)
+
+    basic = [str(w) for w in w_syms]
+    non_basic = [str(x) for x in x_syms]
+
+    while True:
+        z_expr = cur['z']
+        entering, most_neg = None, S.Zero
+        for v in non_basic:
+            coeff = z_expr.coeff(Symbol(v))
+            if coeff < most_neg:
+                most_neg = coeff
+                entering = v
+        if entering is None:
+            status = 'Optimal'
+            break
+
+        leaving, min_ratio = None, float('inf')
+        for w in basic:
+            a = cur[w].coeff(Symbol(entering))
+            if a < 0:
+                const = float(cur[w].subs({Symbol(v): 0 for v in basic + non_basic}))
+                if const >= 0:
+                    ratio = const / -a
+                    if ratio < min_ratio:
+                        min_ratio, leaving = ratio, w
+        if leaving is None:
+            title = f"Step {step+1} (enter {entering}, no leaving — Unbounded)"
+            steps[title] = cur.copy()
+            _print_tableau(title, cur)
+            return 'Unbounded', None, {}, steps
+
+        step += 1
+        pivot_expr = solve(cur[leaving], Symbol(entering))[0]
+        new_cur = {var: simplify(expr.subs(Symbol(entering), pivot_expr)) for var, expr in cur.items()}
+        new_cur[entering] = simplify(pivot_expr)
+        del new_cur[leaving]
+
+        basic[basic.index(leaving)] = entering
+        non_basic[non_basic.index(entering)] = leaving
+        cur = new_cur
+
+        title = f'Step {step} ({entering} in, {leaving} out)'
+        steps[title] = cur.copy()
+        _print_tableau(title, cur)
+
+    all_vars = [str(x) for x in x_syms] + [str(w) for w in w_syms]
+    subs0 = {Symbol(v): 0 for v in all_vars if v in non_basic}
+    z_star = -float(cur['z'].subs(subs0))
+    opt_vals = {v: (float(cur[v].subs(subs0)) if v in cur else 0.0) for v in all_vars}
+
+    return 'Optimal', z_star, opt_vals, steps
+
+# --------------------------- public wrapper ---------------------------------
+
+def auto_simplex(
+    A: List[List[float]],
+    b: List[float],
+    c: List[float],
+    constraint_types: List[str],
+    objective_type: str = 'max',
+    variable_types: List[str] | None = None,
+) -> Dict[str, Any]:
+    A_std, b_std = _preprocess(A, b, constraint_types)
+
+    # MAX → MIN by negating c
+    if objective_type.lower() == 'max':
+        c_eff = [-ci for ci in c]
+        flip_back = True
+    else:
+        c_eff = c[:]
+        flip_back = False
+
+    status, z_star, opt_vals, steps = _simplex_min(A_std, b_std, c_eff)
+
+    # flip sign for MAX objective value
+    if flip_back and z_star is not None:
+        z_star = -z_star
+
+    return {
+        'status': {'Optimal': 'Tối ưu (Optimal)', 'Unbounded': 'Không giới nội (Unbounded)'}[status],
+        'z': z_star,
+        'solution': {k: v for k, v in opt_vals.items() if k.startswith('x')},
+        'steps': steps,
     }
-    
-    return result
+
+# ------------------------------- tests --------------------------------------
+if __name__ == '__main__':
+    # Feasible MIN
+    A1 = [[-3, 1], [1, 2]]
+    b1 = [6, 4]
+    c1 = [-1, 4]
+    cons1 = ['<=', '<=']
+    print('\nMIN example:')
+    print(auto_simplex(A1, b1, c1, cons1, 'min'))
+
+    # Same LP as MAX
+    print('\nMAX example:')
+    print(auto_simplex(A1, b1, c1, cons1, 'max'))

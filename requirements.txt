@@ -3,3 +3,4 @@ PuLP==2.7.0
 matplotlib==3.7.1
 gunicorn==20.1.0
 numpy==1.26.4
+sympy==1.12.1
