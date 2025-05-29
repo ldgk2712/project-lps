@@ -44,7 +44,7 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float]) -> Tuple[
     # Step 0
     for i in range(m):
         cur[str(w_syms[i])] = simplify(b[i] - sum(A[i][j] * x_syms[j] for j in range(n)))
-    cur['z'] = simplify(-sum(c[j] * x_syms[j] for j in range(n)))
+    cur['z'] = simplify(sum(c[j] * x_syms[j] for j in range(n)))
     steps['Step 0'] = cur.copy()
     _print_tableau('Step 0', cur)
 
@@ -79,22 +79,29 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float]) -> Tuple[
             return 'Unbounded', None, {}, steps
 
         step += 1
-        pivot_expr = solve(cur[leaving], Symbol(entering))[0]
-        new_cur = {var: simplify(expr.subs(Symbol(entering), pivot_expr)) for var, expr in cur.items()}
+        pivot_expr = solve(cur[leaving] - Symbol(leaving), Symbol(entering))[0]
+        
+        new_cur = {}
+        for var, expr in cur.items():
+            if var == leaving:
+                # old leaving trở thành non‑basic, skip it for now
+                continue
+            else:
+                new_cur[var] = simplify(expr.subs(Symbol(entering), pivot_expr))
         new_cur[entering] = simplify(pivot_expr)
-        del new_cur[leaving]
 
+         # cập nhật tập biến
         basic[basic.index(leaving)] = entering
         non_basic[non_basic.index(entering)] = leaving
         cur = new_cur
 
-        title = f'Step {step} ({entering} in, {leaving} out)'
+        title = f"Step {step} ({entering} in, {leaving} out)"
         steps[title] = cur.copy()
         _print_tableau(title, cur)
-
+        
     all_vars = [str(x) for x in x_syms] + [str(w) for w in w_syms]
     subs0 = {Symbol(v): 0 for v in all_vars if v in non_basic}
-    z_star = -float(cur['z'].subs(subs0))
+    z_star = float(cur['z'].subs(subs0))
     opt_vals = {v: (float(cur[v].subs(subs0)) if v in cur else 0.0) for v in all_vars}
 
     return 'Optimal', z_star, opt_vals, steps
@@ -112,7 +119,7 @@ def auto_simplex(
     A_std, b_std = _preprocess(A, b, constraint_types)
 
     # MAX → MIN by negating c
-    if objective_type.lower() == 'max':
+    if objective_type and objective_type.strip().lower().startswith('max'):
         c_eff = [-ci for ci in c]
         flip_back = True
     else:
@@ -135,13 +142,14 @@ def auto_simplex(
 # ------------------------------- tests --------------------------------------
 if __name__ == '__main__':
     # Feasible MIN
-    A1 = [[-3, 1], [1, 2]]
-    b1 = [6, 4]
-    c1 = [-1, 4]
+    c = [6, 8, 5, 9]
+    A = [[2, 1, 1, 3],
+        [1, 3, 1, 2]]
+    b = [5, 3]
     cons1 = ['<=', '<=']
     print('\nMIN example:')
-    print(auto_simplex(A1, b1, c1, cons1, 'min'))
+    print(auto_simplex(A, b, c, cons1, 'Min'))
 
     # Same LP as MAX
     print('\nMAX example:')
-    print(auto_simplex(A1, b1, c1, cons1, 'max'))
+    print(auto_simplex(A, b, c, cons1, 'Max'))

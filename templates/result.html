@@ -34,15 +34,15 @@
 
     {% if result.z is not none %}
         <p class="label">Giá trị tối ưu&nbsp;<em>z*</em>:</p>
-        <p>{{ "%.4f"|format(result.z) }}</p>
+        <p>{{ "%.2f"|format(result.z) }}</p>
     {% endif %}
 
     <!-- Giải pháp -->
     {% if result.solution %}
-        <h2>Giải pháp tối ưu</h2>
+        <h2>Nghiệm tối tối ưu</h2>
         <ul>
             {% for var, val in result.solution.items() %}
-                <li>{{ var }} = {{ "%.4f"|format(val) }}</li>
+                <li>{{ var }} = {{ "%.2f"|format(val) }}</li>
             {% endfor %}
         </ul>
     {% endif %}
