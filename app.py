@@ -142,14 +142,14 @@ def solve():
         # và có solution
         should_plot = (num_vars == 2 and 
                        result.get('solution') and 
-                       status_from_result.startswith('tối ưu'))
+                       (status_from_result.startswith('tối ưu') or status_from_result.startswith('vô số nghiệm')))
 
         print(f"DEBUG: num_vars = {num_vars}")
         print(f"DEBUG: result.get('solution') is not None: {result.get('solution') is not None}")
         print(f"DEBUG: status_from_result: '{status_from_result}'")
         print(f"DEBUG: Should plot? {should_plot}")
-
-
+        print(f"DEBUG: result['z'] type: {type(result['z'])}, value: {result['z']}")
+                
         if should_plot:
             try:
                 plot_data = create_plot(A, b_constraints, constraint_types, c, result['solution'], variable_types, objective)
@@ -171,7 +171,7 @@ def create_plot(A_orig, b_orig, constraint_types_orig, c_orig, solution, variabl
     """Tạo biểu đồ miền khả thi và điểm tối ưu cho bài toán 2 biến."""
     
     A = [list(row) for row in A_orig]
-    b = list(b_orig) # Đổi tên biến này cho nhất quán
+    b = list(b_orig)
     constraint_types = list(constraint_types_orig)
     c = list(c_orig)
 
@@ -180,12 +180,24 @@ def create_plot(A_orig, b_orig, constraint_types_orig, c_orig, solution, variabl
 
     fig, ax = plt.subplots(figsize=(10, 8))
 
-    plot_points_x = [0.0] # Khởi tạo với float
+    plot_points_x = [0.0]  # Khởi tạo với float
     plot_points_y = [0.0]
-    if solution:
-        plot_points_x.append(float(solution.get('x1', 0.0)))
-        plot_points_y.append(float(solution.get('x2', 0.0)))
 
+    # Check if solution values are numeric before plotting the optimal point
+    x1_val = solution.get('x1', '0.0')
+    x2_val = solution.get('x2', '0.0')
+    is_numeric_solution = True
+    try:
+        x_opt = float(x1_val)
+        y_opt = float(x2_val)
+        plot_points_x.append(x_opt)
+        plot_points_y.append(y_opt)
+    except ValueError:
+        # If the solution is parametric (e.g., contains 't_w2'), skip plotting the optimal point
+        print(f"DEBUG: Skipping optimal point plotting due to parametric solution - x1: {x1_val}, x2: {x2_val}")
+        is_numeric_solution = False
+
+    # Continue with plotting the feasible region
     for i in range(len(A)):
         if abs(A[i][1]) > 1e-9: 
             plot_points_y.append(b[i] / A[i][1])
@@ -199,22 +211,22 @@ def create_plot(A_orig, b_orig, constraint_types_orig, c_orig, solution, variabl
             matrix_A_intersect = np.array([A[i], A[j]])
             vector_b_intersect = np.array([b[i], b[j]])
             try:
-                if abs(np.linalg.det(matrix_A_intersect)) > 1e-9: # Kiểm tra định thức khác 0
+                if abs(np.linalg.det(matrix_A_intersect)) > 1e-9:  # Kiểm tra định thức khác 0
                     intersect_pt = np.linalg.solve(matrix_A_intersect, vector_b_intersect)
                     plot_points_x.append(intersect_pt[0])
                     plot_points_y.append(intersect_pt[1])
             except np.linalg.LinAlgError:
                 continue 
 
-    if not plot_points_x or not plot_points_y: # Xử lý trường hợp list rỗng
+    if not plot_points_x or not plot_points_y:  # Xử lý trường hợp list rỗng
         print("CẢNH BÁO: Không có đủ điểm để xác định giới hạn biểu đồ.")
-        x_plot_min, x_plot_max = -5, 5 # Giá trị mặc định
+        x_plot_min, x_plot_max = -5, 5  # Giá trị mặc định
         y_plot_min, y_plot_max = -5, 5
     else:
         x_min_data, x_max_data = min(plot_points_x), max(plot_points_x)
         y_min_data, y_max_data = min(plot_points_y), max(plot_points_y)
         
-        margin_x = max(1.0, abs(x_max_data - x_min_data) * 0.25) # Tăng margin
+        margin_x = max(1.0, abs(x_max_data - x_min_data) * 0.25)  # Tăng margin
         margin_y = max(1.0, abs(y_max_data - y_min_data) * 0.25)
 
         x_plot_min = x_min_data - margin_x
@@ -222,8 +234,8 @@ def create_plot(A_orig, b_orig, constraint_types_orig, c_orig, solution, variabl
         y_plot_min = y_min_data - margin_y
         y_plot_max = y_max_data + margin_y
     
-    if '>=0' in variable_types[0] and x_plot_min < -margin_x/3 : x_plot_min = -margin_x/3
-    if '>=0' in variable_types[1] and y_plot_min < -margin_y/3 : y_plot_min = -margin_y/3
+    if '>=0' in variable_types[0] and x_plot_min < -margin_x/3: x_plot_min = -margin_x/3
+    if '>=0' in variable_types[1] and y_plot_min < -margin_y/3: y_plot_min = -margin_y/3
 
     x_line_vals = np.linspace(x_plot_min, x_plot_max, 400)
     for i in range(len(A)):
@@ -246,7 +258,7 @@ def create_plot(A_orig, b_orig, constraint_types_orig, c_orig, solution, variabl
             y_line_vals = (bi - a1 * x_line_vals) / a2
             ax.plot(x_line_vals, y_line_vals, label=label, lw=1.5)
         elif abs(a1) > 1e-9: 
-            ax.axvline(x = bi / a1, label=label, lw=1.5)
+            ax.axvline(x=bi / a1, label=label, lw=1.5)
 
     if variable_types[0] == '>=0': ax.axvline(x=0, color='gray', linestyle='--', lw=1, label='x₁ ≥ 0')
     if variable_types[0] == '<=0': ax.axvline(x=0, color='gray', linestyle='--', lw=1, label='x₁ ≤ 0')
@@ -274,30 +286,30 @@ def create_plot(A_orig, b_orig, constraint_types_orig, c_orig, solution, variabl
     ax.imshow(feasible_mask.astype(int), extent=(x_plot_min, x_plot_max, y_plot_min, y_plot_max),
               origin='lower', cmap="Greens", alpha=0.3, aspect='auto')
 
-    if solution and 'x1' in solution and 'x2' in solution:
-        x_opt, y_opt = float(solution['x1']), float(solution['x2']) # Đảm bảo là float
+    # Plot the optimal point only if the solution is numeric
+    if is_numeric_solution and 'x1' in solution and 'x2' in solution:
         ax.plot(x_opt, y_opt, 'o', color='red', markersize=10, label=f'Tối ưu: ({x_opt:.2f}, {y_opt:.2f})', zorder=5)
-        if objective_type in ['max', 'min'] and (abs(c[0]) > 1e-9 or abs(c[1]) > 1e-9) :
-            z_opt = c[0]*x_opt + c[1]*y_opt
+        if objective_type in ['max', 'min'] and (abs(c[0]) > 1e-9 or abs(c[1]) > 1e-9):
+            z_opt = c[0] * x_opt + c[1] * y_opt
             if abs(c[1]) > 1e-9: 
-                y_obj_line = (z_opt - c[0]*x_line_vals) / c[1]
+                y_obj_line = (z_opt - c[0] * x_line_vals) / c[1]
+                ax.plot(x_line_vals, y_obj_line, linestyle='--', color='purple', lw=1.5, label=f'Đường mục tiêu z={z_opt:.2f}')
             elif abs(c[0]) > 1e-9: 
-                 ax.axvline(x = z_opt / c[0], linestyle='--', color='purple', lw=1.5, label=f'Đường mục tiêu z={z_opt:.2f}')
+                ax.axvline(x=z_opt / c[0], linestyle='--', color='purple', lw=1.5, label=f'Đường mục tiêu z={z_opt:.2f}')
 
     ax.set_xlabel("x₁", fontsize=12)
     ax.set_ylabel("x₂", fontsize=12)
     ax.set_title("Biểu đồ miền khả thi và điểm tối ưu", fontsize=14)
     ax.grid(True, linestyle=':', alpha=0.6)
     
-    # Điều chỉnh vị trí legend để không che biểu đồ
     handles, labels = ax.get_legend_handles_labels()
-    if handles: # Chỉ hiển thị legend nếu có gì để hiển thị
+    if handles:
         ax.legend(handles, labels, fontsize=9, loc='center left', bbox_to_anchor=(1.01, 0.5))
 
     ax.set_xlim(x_plot_min, x_plot_max)
     ax.set_ylim(y_plot_min, y_plot_max)
 
-    fig.tight_layout(rect=[0, 0, 0.80, 1]) # Điều chỉnh rect để có không gian cho legend
+    fig.tight_layout(rect=[0, 0, 0.80, 1])
 
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=100) 

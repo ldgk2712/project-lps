@@ -9,18 +9,18 @@
     <style>
         body {
             font-family: 'Roboto', sans-serif;
-            background-color: #f0f4f8; /* Light gray-blue background for the page */
-            color: #334155; /* Default text color */
+            background-color: #f4f7f9; /* Slightly lighter and cooler background */
+            color: #374151; /* Darker gray for better contrast (Tailwind gray-700) */
             line-height: 1.6;
         }
 
-        .container-wrapper { /* Renamed from .container to avoid conflict if user has global .container style */
+        .container-wrapper {
             max-width: 1000px;
-            margin: 0 auto; /* Centered, no top/bottom margin here, handled by body/header/footer */
+            margin: 2rem auto; /* Added more top/bottom margin for better page centering */
             background-color: white;
             border-radius: 0.75rem; /* 12px */
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); /* Tailwind-like shadow */
-            overflow: hidden; /* To contain rounded corners of the header */
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.1); /* Softer, more diffused shadow */
+            overflow: hidden;
         }
         
         .back-button {
@@ -29,90 +29,92 @@
             background-color: #4f46e5; /* Indigo 600 */
             color: white;
             font-weight: 500; /* medium */
-            padding: 0.625rem 1.25rem; /* 10px 20px */
-            border-radius: 0.375rem; /* 6px */
-            transition: all 0.3s ease-in-out;
-            margin-bottom: 1.5rem; /* 24px */
+            padding: 0.75rem 1.5rem; /* Slightly larger padding */
+            border-radius: 0.5rem; /* Slightly larger radius */
+            transition: all 0.2s ease-in-out; /* Faster transition */
+            margin-bottom: 2rem; /* Increased margin */
             text-decoration: none;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* Shadow with button color tint */
         }
         
         .back-button:hover {
             background-color: #4338ca; /* Indigo 700 */
             transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.25), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
         }
 
         .back-button svg {
-            margin-right: 0.5rem; /* 8px */
+            margin-right: 0.625rem; /* 10px */
         }
         
         .results-header {
-            padding: 2.5rem 1.5rem; 
-            background-color: #4f46e5; 
+            padding: 2rem 1.75rem; /* Adjusted padding */
+            background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); /* Gradient header */
             color: white;
-            /* border-radius: 0.75rem 0.75rem 0 0; /* Applied to container-wrapper */
-            margin-bottom: 1.5rem; 
+            margin-bottom: 2rem; /* Increased spacing after header */
         }
 
         h1.main-title { 
-            font-size: 2.25rem; 
+            font-size: 2.5rem; /* Slightly larger */
             font-weight: 700; 
-            margin-bottom: 0.5rem; 
+            margin-bottom: 0.75rem; /* Increased margin */
             text-align: center;
             color: white; 
         }
 
         p.subtitle { 
             text-align: center;
-            color: #c7d2fe; /* Lighter indigo for subtitle */
+            color: #e0e7ff; /* Lighter indigo (Indigo 100) for subtitle for softer contrast */
             margin-top: 0.25rem; 
             font-size: 1.125rem; 
+            font-weight: 300; /* Lighter font weight for subtitle */
         }
         
         .content-wrapper { 
-            padding: 0 2rem 2rem 2rem; 
+            padding: 0 2.5rem 2.5rem 2.5rem; /* Increased padding */
         }
 
         h2.section-title { 
-            font-size: 1.75rem; 
+            font-size: 1.875rem; /* Slightly larger */
             font-weight: 600; 
-            color: #4338ca; 
-            margin-top: 2.5rem; 
-            margin-bottom: 1.25rem; 
-            padding-bottom: 0.5rem; 
-            border-bottom: 2px solid #818cf8; /* Lighter Indigo for border */
+            color: #4338ca; /* Indigo 700 */
+            margin-top: 3rem; /* Increased top margin */
+            margin-bottom: 1.5rem; /* Increased bottom margin */
+            padding-bottom: 0.75rem; /* Increased padding */
+            border-bottom: 1px solid #c7d2fe; /* Lighter, thinner border (Indigo 200) */
             display: flex;
             align-items: center;
         }
 
-        h2.section-title svg {
-            margin-right: 0.75rem; 
-            color: #4f46e5; 
+        h2.section-title svg, h2.section-title .icon { /* Targeting both SVG and potential text icon */
+            margin-right: 0.875rem; /* 14px */
+            color: #4f46e5; /* Indigo 600 */
+            width: 28px; /* Explicit size */
+            height: 28px; /* Explicit size */
         }
         
         h3.step-title { 
-            font-size: 1.375rem; 
+            font-size: 1.5rem; /* Slightly larger */
             font-weight: 600; 
-            color: #4f46e5; 
-            margin-top: 1.5rem; 
-            margin-bottom: 0.75rem; 
+            color: #4f46e5; /* Indigo 600 */
+            margin-top: 2rem; /* Increased margin */
+            margin-bottom: 1rem; /* Increased margin */
         }
         
         .result-section {
-            padding: 1.75rem; 
-            background-color: #f8fafc; /* Slate 50 */
-            border: 1px solid #e2e8f0; /* Slate 200 */
-            border-radius: 0.5rem; 
-            margin-bottom: 2rem; 
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.07), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            padding: 2rem; /* Increased padding */
+            background-color: #f9fafb; /* Tailwind Gray-50, very light gray */
+            border: 1px solid #e5e7eb; /* Tailwind Gray-200 */
+            border-radius: 0.75rem; /* Increased radius */
+            margin-bottom: 2.5rem; /* Increased margin */
+            box-shadow: 0 3px 6px rgba(0,0,0,0.03), 0 3px 6px rgba(0,0,0,0.03); /* Softer, more subtle shadow */
         }
         
         .label {
             font-weight: 500; 
-            color: #475569; /* Slate 600 */
-            margin-bottom: 0.375rem; 
-            font-size: 0.875rem; 
+            color: #6b7280; /* Tailwind Gray-500 */
+            margin-bottom: 0.5rem; /* Increased margin */
+            font-size: 0.9rem; /* Slightly larger */
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
@@ -120,53 +122,71 @@
         .value {
             font-weight: 600; 
             color: #3730a3; /* Indigo 800 */
-            font-size: 1.25rem; 
+            font-size: 1.375rem; /* Slightly larger */
         }
 
-        .solution-item {
+        /* Grid styling for Status and Optimal Value */
+        .status-optimal-grid { /* Added a specific class for this grid if needed, otherwise use the existing structure */
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* Responsive columns */
+            gap: 1.5rem; /* Increased gap */
+        }
+
+        .solution-container { /* Wrapper for solution items if not already gridded */
+             display: grid;
+             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* Responsive columns for solution variables */
+             gap: 1rem;
+        }
+
+        .solution-row { /* Replaces .solution-item for clarity with row/column structure */
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.875rem 0.25rem; 
-            border-bottom: 1px solid #e5e7eb; 
+            flex-direction: column; /* Stack variable and value */
+            background-color: #ffffff;
+            padding: 1rem; /* Padding for each item */
+            border-radius: 0.5rem;
+            border: 1px solid #e5e7eb; /* Gray 200 */
+            box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
         }
-        .solution-item:last-child {
-            border-bottom: none;
-        }
+        
         .solution-var {
             font-weight: 500;
-            color: #1e293b; /* Slate 800 */
+            color: #1f2937; /* Tailwind Gray-800 */
+            font-size: 0.95rem;
+            margin-bottom: 0.375rem; /* Space between var and val */
         }
         .solution-val {
-            font-weight: 600;
+            font-weight: 700; /* Bolder */
+            font-size: 1.125rem; /* Larger */
             color: #4338ca; /* Indigo 700 */
-            background-color: #e0e7ff; /* Indigo 100 for highlight */
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
+            background-color: #eef2ff; /* Indigo 50 for a very subtle highlight */
+            padding: 0.375rem 0.625rem; /* Adjusted padding */
+            border-radius: 0.375rem; /* Slightly larger radius */
+            align-self: flex-start; /* Align to start of the flex container */
         }
         
         .step-details { 
             background-color: #ffffff; 
-            border: 1px solid #e2e8f0; 
+            border: 1px solid #e5e7eb; /* Tailwind Gray-200 */
             border-radius: 0.5rem; 
-            padding: 1.5rem; 
-            margin-bottom: 1.5rem; 
-            box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+            padding: 1.75rem; /* Increased padding */
+            margin-bottom: 2rem; /* Increased margin */
+            box-shadow: 0 2px 4px 0 rgba(0,0,0,0.05);
         }
         
         pre {
-            background-color: #f1f5f9; /* Slate 100 */
-            padding: 1.25rem; 
-            border-radius: 0.375rem; 
+            background-color: #f3f4f6; /* Tailwind Gray-100 */
+            padding: 1.5rem; /* Increased padding */
+            border-radius: 0.5rem; /* Increased radius */
             overflow-x: auto;
             font-family: 'Roboto Mono', monospace; 
             font-size: 0.9rem; 
             white-space: pre-wrap; 
-            border: 1px solid #cbd5e1; /* Slate 300 */
-            color: #0f172a; /* Slate 900 */
+            border: 1px solid #d1d5db; /* Tailwind Gray-300 */
+            color: #111827; /* Tailwind Gray-900 */
+            line-height: 1.5; /* Improved line height for code */
         }
         
-        ul.solution-list { 
+        ul.solution-list { /* Though not used in current structure, good to have */
             list-style-type: none;
             padding: 0;
         }
@@ -175,63 +195,63 @@
             max-width: 100%;
             height: auto;
             border-radius: 0.5rem; 
-            margin: 1.5rem auto; 
+            margin: 2rem auto; /* Increased margin */
             display: block;
-            border: 1px solid #e2e8f0; /* Light border for image */
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.07);
+            border: 1px solid #e5e7eb; /* Light border for image (Gray-200) */
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08); /* Softer shadow */
         }
 
         .footer {
             text-align: center;
-            padding: 2.5rem 1rem; /* Increased padding */
+            padding: 2.5rem 1rem; 
             font-size: 0.875rem; 
-            color: #64748b; /* Slate 500 */
-            background-color: #f8fafc; /* Slate 50 for footer bg */
-            border-top: 1px solid #e2e8f0; 
+            color: #6b7280; /* Tailwind Gray-500 */
+            background-color: #f9fafb; /* Tailwind Gray-50 */
+            border-top: 1px solid #e5e7eb; /* Tailwind Gray-200 */
+            margin-top: 3rem; /* Ensure space above footer */
         }
         
+        /* More refined responsive adjustments */
         @media (max-width: 768px) {
-            .container-wrapper { margin: 1rem; }
-            .results-header { padding: 2rem 1rem; margin-bottom: 1rem; }
-            .content-wrapper { padding: 0 1.5rem 1.5rem 1.5rem; }
-            h1.main-title { font-size: 1.875rem; } 
-            p.subtitle { font-size: 1rem; }
-            h2.section-title { font-size: 1.5rem; }
-            h3.step-title { font-size: 1.25rem; }
-            .back-button { width: 100%; justify-content: center; padding: 0.75rem; }
-            .result-section { padding: 1.5rem; }
-            .step-details { padding: 1.25rem; }
-            pre { font-size: 0.85rem; padding: 1rem; }
-            .value { font-size: 1.125rem; }
+            .container-wrapper { margin: 1.5rem; } /* Slightly more margin on smaller screens */
+            .results-header { padding: 1.75rem 1.25rem; margin-bottom: 1.5rem; }
+            .content-wrapper { padding: 0 1.75rem 1.75rem 1.75rem; }
+            h1.main-title { font-size: 2rem; } 
+            p.subtitle { font-size: 1.05rem; }
+            h2.section-title { font-size: 1.625rem; }
+            h3.step-title { font-size: 1.375rem; }
+            .back-button { width: 100%; justify-content: center; padding: 0.875rem; }
+            .result-section { padding: 1.75rem; }
+            .step-details { padding: 1.5rem; }
+            pre { font-size: 0.875rem; padding: 1.25rem; }
+            .value { font-size: 1.25rem; }
+            .solution-container { grid-template-columns: 1fr; gap: 0.75rem; } /* Stack solution items */
+            .solution-row { padding: 0.75rem; }
         }
         
         @media (max-width: 480px) {
-            .container-wrapper { margin: 0.5rem; }
-            .results-header { padding: 1.5rem 0.75rem; }
+            .container-wrapper { margin: 1rem 0.75rem; border-radius: 0.5rem; }
+            .results-header { padding: 1.5rem 1rem; }
             .content-wrapper { padding: 0 1rem 1rem 1rem; }
-            h1.main-title { font-size: 1.6rem; }
-            p.subtitle { font-size: 0.9rem; }
-            h2.section-title { font-size: 1.3rem; }
-            h3.step-title { font-size: 1.15rem; }
-            .result-section { padding: 1.25rem; }
-            .step-details { padding: 1rem; }
-            pre { padding: 0.75rem; font-size: 0.8rem; }
-            .value { font-size: 1rem; }
+            h1.main-title { font-size: 1.75rem; }
+            p.subtitle { font-size: 0.95rem; }
+            h2.section-title { font-size: 1.375rem; }
+            h3.step-title { font-size: 1.2rem; }
+            .result-section { padding: 1.25rem; border-radius: 0.5rem; }
+            .step-details { padding: 1.25rem; border-radius: 0.375rem; }
+            pre { padding: 1rem; font-size: 0.8rem; border-radius: 0.25rem; }
+            .value { font-size: 1.1rem; }
+             .back-button { font-size: 0.9rem; padding: 0.625rem; }
+             .back-button svg { margin-right: 0.5rem; }
         }
     </style>
 </head>
-<body class="min-h-screen flex flex-col">
-    <div class="container-wrapper my-8">
-        <header class="results-header">
+<body class="min-h-screen flex flex-col"> <div class="container-wrapper my-8"> <header class="results-header">
             <h1 class="main-title">Kết quả bài toán Đơn hình</h1>
             <p class="subtitle">Phương pháp Simplex</p>
         </header>
 
         <div class="content-wrapper">
-            <!-- 
-              Thay đổi href để sử dụng history.back() cho việc quay lại trang trước.
-              Điều này đáng tin cậy hơn là cố gắng đoán URL của trang index.
-            -->
             <a href="javascript:history.back()" class="back-button">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
@@ -240,41 +260,46 @@
             </a>
 
             <div class="result-section">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                    <div>
+                 <div class="status-optimal-grid"> <div>
                         <p class="label">Trạng thái:</p>
                         <p class="value" id="result-status">{{ result.status }}</p>
                     </div>
                     {% if result.z is not none %}
-                    <div>
-                        <p class="label">Giá trị tối ưu z*:</p>
-                        <p class="value" id="result-z">{{ "%.2f"|format(result.z) }}</p>
-                    </div>
+                        <div> <p class="label">Giá trị tối ưu z*:</p>
+                            {% if result.z is number %}
+                                <p class="value" id="result-z">{{ "%.2f"|format(result.z) }}</p>
+                            {% else %}
+                                <p class="value" id="result-z">{{ result.z }}</p>
+                            {% endif %}
+                        </div>
                     {% else %}
-                    <div>
-                        <p class="label">Giá trị tối ưu z*:</p>
-                        <p class="value" id="result-z">Không xác định</p>
-                    </div>
+                        <div> <p class="label">Giá trị tối ưu z*:</p>
+                            <p class="value" id="result-z">Không xác định</p>
+                        </div>
                     {% endif %}
                 </div>
             </div>
         
             {% if result.solution %}
-            <div class="result-section" id="solution-section">
+            <div class="result-section">
                 <h2 class="section-title">
-                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <span class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                        </svg>
+                    </span>
                     Nghiệm tối ưu
                 </h2>
-                <ul class="solution-list" id="result-solution">
-                    {% for var, val in result.solution.items() %}
-                    <li class="solution-item">
-                        <span class="solution-var">{{ var }}</span>
-                        <span class="solution-val">{{ "%.2f"|format(val) }}</span>
-                    </li>
+                <div class="solution-container"> {% for var, val in result.solution.items() %}
+                        <div class="solution-row"> <span class="solution-var">{{ var }}</span>
+                            {% if val is number %}
+                                <span class="solution-val">{{ "%.2f"|format(val) }}</span>
+                            {% else %}
+                                <span class="solution-val">{{ val }}</span>
+                            {% endif %}
+                        </div>
                     {% endfor %}
-                </ul>
+                </div>
             </div>
             {% endif %}
         
@@ -288,27 +313,25 @@
                 </h2>
                 <img src="data:image/png;base64,{{ plot_data }}" alt="Biểu đồ miền khả thi và nghiệm tối ưu" class="plot-image" id="plot-image-src">
             </div>
-            {% elif result.plot_error_message %}  <div class="result-section" id="plot-error-section">
+            {% elif result.plot_error_message %}  
+            <div class="result-section" id="plot-error-section">
                  <h2 class="section-title">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     Lỗi Hình ảnh hóa
                 </h2>
-                <p class="text-red-600">{{ result.plot_error_message }}</p>
-            </div>
+                <p class="text-red-600 font-medium p-4 bg-red-50 border border-red-200 rounded-md">{{ result.plot_error_message }}</p> </div>
             {% endif %}
 
             {% if result.steps and result.steps.items()|length > 0 %}
-            <div id="steps-section" class="mt-8">
-                <h2 class="section-title">
+            <div id="steps-section" class="mt-12"> <h2 class="section-title">
                      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                     </svg>
                     Chi tiết các bước
                 </h2>
-                <div id="result-steps" class="space-y-6">
-                    {% for title, tableau in result.steps.items() %}
+                <div id="result-steps" class="space-y-8"> {% for title, tableau in result.steps.items() %}
                     <div class="step-details">
                         <h3 class="step-title">{{ title }}</h3>
                         <pre>
