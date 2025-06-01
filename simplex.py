@@ -1,5 +1,3 @@
-"""simplex.py – Enhanced Simplex algorithm with robust URS handling"""
-
 from sympy import simplify, solve, Symbol, S
 from typing import List, Dict, Tuple, Any, Union
 import logging
@@ -72,7 +70,7 @@ def _print_tableau(title: str, exprs: Dict[str, Any], basic_vars: List[str] = No
     print(f"{'=' * 60}")
 
 def _simplex_min(A: List[List[float]], b: List[float], c: List[float], constraint_types: List[str], variable_types: List[str], objective_type: str) -> Tuple[str, Union[float, None], Dict[str, float], Dict[str, Any]]:
-    """Core Simplex algorithm for minimization with robust URS handling."""
+    """Core Simplex algorithm for minimization with robust URS and multiple-optima handling."""
     m, n_original = len(A), len(A[0])
 
     # Input validation
@@ -197,9 +195,23 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float], constrain
                 most_neg_coeff = coeff_val
                 entering_var_name = v_name_str
 
-        if entering_var_name is None or most_neg_coeff >= -1e-12:
-            status = 'Optimal'
-            logger.info("Optimal solution found")
+        # Check optimality and multiple-optima
+        tol = 1e-12
+        if entering_var_name is None or most_neg_coeff >= -tol:
+            # Check for alternative optima: any non-basic var with reduced cost ~0
+            alt_optima = False
+            for v_name_str in non_basic_vars:
+                v_sym = Symbol(v_name_str)
+                coeff = z_expr.coeff(v_sym)
+                if abs(float(coeff.evalf())) < tol:
+                    alt_optima = True
+                    break
+            if alt_optima:
+                status = 'Multiple'
+                logger.info("Multiple optimal solutions detected")
+            else:
+                status = 'Optimal'
+                logger.info("Optimal solution found")
             break
 
         leaving_var_name, min_ratio = None, float('inf')
@@ -218,7 +230,7 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float], constrain
                 const_subs = {sym: 0 for sym in expr_w.free_symbols}
                 const_val = float(expr_w.subs(const_subs).evalf())
                 ratio = const_val / (-coeff_entering_val)
-                if ratio < min_ratio or (abs(ratio - min_ratio) < 1e-14 and (leaving_var_name is None or w_name_str < leaving_var_name)):
+                if ratio < min_ratio or (abs(ratio - min_ratio) < tol and (leaving_var_name is None or w_name_str < leaving_var_name)):
                     min_ratio = ratio
                     leaving_var_name = w_name_str
 
@@ -261,7 +273,7 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float], constrain
                 neg_expr = new_cur.get(info['neg_name'], S.Zero)
                 pos_val = float(pos_expr.subs({sym:0 for sym in pos_expr.free_symbols}).evalf())
                 neg_val = float(neg_expr.subs({sym:0 for sym in neg_expr.free_symbols}).evalf())
-                if pos_val < -1e-14 or neg_val < -1e-14:
+                if pos_val < -tol or neg_val < -tol:
                     logger.warning(f"URS non-negativity violation for {info['original_name']}")
 
         basic_var_names.remove(leaving_var_name)
@@ -278,7 +290,7 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float], constrain
     z_star = None
     sol_final = {}
 
-    if status == 'Optimal':
+    if status in ['Optimal', 'Multiple']:
         subs_nb_zero = {Symbol(nb): 0 for nb in non_basic_vars}
         tabla_vals = {}
         for v in basic_var_names:
@@ -292,19 +304,19 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float], constrain
                 p = tabla_vals.get(info['pos_name'], 0.0)
                 n = tabla_vals.get(info['neg_name'], 0.0)
                 val = p - n
-                sol_final[name] = 0.0 if abs(val) < 1e-14 else val
+                sol_final[name] = 0.0 if abs(val) < tol else val
                 logger.info(f"URS variable {name} = {p} - {n} = {sol_final[name]}")
             elif info.get('is_transformed', False):
                 vname = info['tableau_name']
                 vval = tabla_vals.get(vname, 0.0)
-                sol_final[name] = -vval if abs(vval) > 1e-14 else 0.0
+                sol_final[name] = -vval if abs(vval) > tol else 0.0
             else:
                 vname = info['tableau_name']
                 vval = tabla_vals.get(vname, 0.0)
-                sol_final[name] = 0.0 if abs(vval) < 1e-14 else vval
+                sol_final[name] = 0.0 if abs(vval) < tol else vval
 
         z_current = sum(float(c[i]) * sol_final.get(original_var_info_map[i]['original_name'], 0.0) for i in range(n_original))
-        z_star = 0.0 if abs(z_current) < 1e-14 else z_current
+        z_star = 0.0 if abs(z_current) < tol else z_current
     elif status == 'Unbounded':
         z_star = float('-inf')
     elif status == 'Infeasible':
@@ -320,7 +332,7 @@ def auto_simplex(
     objective_type: str = 'max',
     variable_types: List[str] | None = None,
 ) -> Dict[str, Any]:
-    """Main function to solve linear programming problems using Simplex with robust URS support."""
+    """Main function to solve linear programming problems using Simplex with robust URS and multiple-optima support."""
     num_constraints, num_vars = len(A), len(c)
     if not A or not all(len(row) == num_vars for row in A) or len(b) != num_constraints or len(constraint_types) != num_constraints:
         raise ValueError("Đầu vào không hợp lệ")
@@ -369,10 +381,13 @@ def auto_simplex(
         z_final = float('inf') if flip_z else float('-inf')
     elif status == 'Infeasible':
         z_final = None
+    elif status == 'Multiple':
+        z_final = z_star_min if not flip_z else -z_star_min
 
-    sol_return = sol_vals if status == 'Optimal' else {}
+    sol_return = sol_vals if status in ['Optimal', 'Multiple'] else {}
     status_map = {
         'Optimal': 'Tối ưu (Optimal)',
+        'Multiple': 'Vô số nghiệm (Multiple Optima)',
         'Unbounded': 'Không giới nội (Unbounded)',
         'Infeasible': 'Vô nghiệm (Infeasible)',
         'Error': 'Lỗi (Error)'
