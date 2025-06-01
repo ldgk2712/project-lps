@@ -14,13 +14,13 @@
             line-height: 1.6;
         }
 
-        .container {
+        .container-wrapper { /* Renamed from .container to avoid conflict if user has global .container style */
             max-width: 1000px;
-            margin: 2rem auto; /* Added top/bottom margin */
+            margin: 0 auto; /* Centered, no top/bottom margin here, handled by body/header/footer */
             background-color: white;
             border-radius: 0.75rem; /* 12px */
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); /* Tailwind-like shadow */
-            padding: 0; /* Remove padding here, header will have its own */
+            overflow: hidden; /* To contain rounded corners of the header */
         }
         
         .back-button {
@@ -47,13 +47,12 @@
             margin-right: 0.5rem; /* 8px */
         }
         
-        /* Header specific styles */
         .results-header {
-            padding: 2rem 1rem; /* Add padding to header */
-            background-color: #4f46e5; /* Indigo 600 */
+            padding: 2.5rem 1.5rem; 
+            background-color: #4f46e5; 
             color: white;
-            border-radius: 0.75rem 0.75rem 0 0; /* Rounded top corners for header, matching container */
-            margin-bottom: 1.5rem; /* Space below header */
+            /* border-radius: 0.75rem 0.75rem 0 0; /* Applied to container-wrapper */
+            margin-bottom: 1.5rem; 
         }
 
         h1.main-title { 
@@ -61,18 +60,18 @@
             font-weight: 700; 
             margin-bottom: 0.5rem; 
             text-align: center;
-            color: white; /* Ensure title text is white */
+            color: white; 
         }
 
         p.subtitle { 
             text-align: center;
-            color: #a5b4fc; 
-            margin-top: 0.25rem; /* Adjusted margin */
+            color: #c7d2fe; /* Lighter indigo for subtitle */
+            margin-top: 0.25rem; 
             font-size: 1.125rem; 
         }
         
-        .content-wrapper { /* Added wrapper for padding inside container, below header */
-            padding: 0 2rem 2rem 2rem; /* Padding for content below header */
+        .content-wrapper { 
+            padding: 0 2rem 2rem 2rem; 
         }
 
         h2.section-title { 
@@ -82,7 +81,7 @@
             margin-top: 2.5rem; 
             margin-bottom: 1.25rem; 
             padding-bottom: 0.5rem; 
-            border-bottom: 2px solid #6366f1; 
+            border-bottom: 2px solid #818cf8; /* Lighter Indigo for border */
             display: flex;
             align-items: center;
         }
@@ -102,24 +101,25 @@
         
         .result-section {
             padding: 1.75rem; 
-            background-color: #f9fafb; 
-            border: 1px solid #e5e7eb; 
+            background-color: #f8fafc; /* Slate 50 */
+            border: 1px solid #e2e8f0; /* Slate 200 */
             border-radius: 0.5rem; 
             margin-bottom: 2rem; 
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.07), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
         }
         
         .label {
             font-weight: 500; 
-            color: #4b5563; 
-            margin-bottom: 0.25rem; 
+            color: #475569; /* Slate 600 */
+            margin-bottom: 0.375rem; 
             font-size: 0.875rem; 
             text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
         
         .value {
             font-weight: 600; 
-            color: #3730a3; 
+            color: #3730a3; /* Indigo 800 */
             font-size: 1.25rem; 
         }
 
@@ -127,7 +127,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.75rem 0; 
+            padding: 0.875rem 0.25rem; 
             border-bottom: 1px solid #e5e7eb; 
         }
         .solution-item:last-child {
@@ -135,31 +135,35 @@
         }
         .solution-var {
             font-weight: 500;
-            color: #1f2937; 
+            color: #1e293b; /* Slate 800 */
         }
         .solution-val {
             font-weight: 600;
-            color: #4f46e5; 
+            color: #4338ca; /* Indigo 700 */
+            background-color: #e0e7ff; /* Indigo 100 for highlight */
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
         }
         
         .step-details { 
-            background-color: #f9fafb; 
-            border: 1px solid #e5e7eb; 
+            background-color: #ffffff; 
+            border: 1px solid #e2e8f0; 
             border-radius: 0.5rem; 
-            padding: 1.25rem; 
+            padding: 1.5rem; 
             margin-bottom: 1.5rem; 
+            box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
         }
         
         pre {
-            background-color: #f3f4f6; 
+            background-color: #f1f5f9; /* Slate 100 */
             padding: 1.25rem; 
             border-radius: 0.375rem; 
             overflow-x: auto;
             font-family: 'Roboto Mono', monospace; 
             font-size: 0.9rem; 
             white-space: pre-wrap; 
-            border: 1px solid #d1d5db; 
-            color: #111827; 
+            border: 1px solid #cbd5e1; /* Slate 300 */
+            color: #0f172a; /* Slate 900 */
         }
         
         ul.solution-list { 
@@ -173,89 +177,70 @@
             border-radius: 0.5rem; 
             margin: 1.5rem auto; 
             display: block;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0; /* Light border for image */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.07);
         }
 
         .footer {
             text-align: center;
-            padding: 2rem 0;
+            padding: 2.5rem 1rem; /* Increased padding */
             font-size: 0.875rem; 
-            color: #6b7280; 
-            border-top: 1px solid #e5e7eb; 
-            margin-top: 2rem; /* Ensures space above footer if content is short */
+            color: #64748b; /* Slate 500 */
+            background-color: #f8fafc; /* Slate 50 for footer bg */
+            border-top: 1px solid #e2e8f0; 
         }
         
-        /* Responsive adjustments */
         @media (max-width: 768px) {
-            .container {
-                margin: 1rem;
-                /* padding: 1.5rem; /* Adjusted by content-wrapper */
-            }
-            .results-header { padding: 1.5rem 1rem; }
+            .container-wrapper { margin: 1rem; }
+            .results-header { padding: 2rem 1rem; margin-bottom: 1rem; }
             .content-wrapper { padding: 0 1.5rem 1.5rem 1.5rem; }
-            
-            h1.main-title { font-size: 1.75rem; } 
-            p.subtitle { font-size: 1rem; margin-bottom: 2rem; }
+            h1.main-title { font-size: 1.875rem; } 
+            p.subtitle { font-size: 1rem; }
             h2.section-title { font-size: 1.5rem; }
             h3.step-title { font-size: 1.25rem; }
-            
-            .back-button {
-                width: 100%;
-                justify-content: center;
-                padding: 0.75rem;
-                margin-left: auto; /* Center button if container has padding */
-                margin-right: auto; /* Center button if container has padding */
-                display: flex; /* Ensure it takes full width in flex context */
-            }
-            
-            .step-details {
-                padding: 1rem;
-            }
-            
-            pre {
-                font-size: 0.85rem;
-                padding: 1rem;
-            }
+            .back-button { width: 100%; justify-content: center; padding: 0.75rem; }
+            .result-section { padding: 1.5rem; }
+            .step-details { padding: 1.25rem; }
+            pre { font-size: 0.85rem; padding: 1rem; }
             .value { font-size: 1.125rem; }
         }
         
         @media (max-width: 480px) {
-            .container {
-                margin: 0.5rem;
-                 /* padding: 1rem; /* Adjusted by content-wrapper */
-            }
-            .results-header { padding: 1.25rem 0.75rem; }
+            .container-wrapper { margin: 0.5rem; }
+            .results-header { padding: 1.5rem 0.75rem; }
             .content-wrapper { padding: 0 1rem 1rem 1rem; }
-
-            h1.main-title { font-size: 1.5rem; }
+            h1.main-title { font-size: 1.6rem; }
             p.subtitle { font-size: 0.9rem; }
             h2.section-title { font-size: 1.3rem; }
             h3.step-title { font-size: 1.15rem; }
-            
-            pre {
-                padding: 0.75rem;
-                font-size: 0.8rem;
-            }
-             .value { font-size: 1rem; }
+            .result-section { padding: 1.25rem; }
+            .step-details { padding: 1rem; }
+            pre { padding: 0.75rem; font-size: 0.8rem; }
+            .value { font-size: 1rem; }
         }
     </style>
 </head>
-<body>
-    <div class="container">
+<body class="min-h-screen flex flex-col">
+    <div class="container-wrapper my-8">
         <header class="results-header">
             <h1 class="main-title">Kết quả bài toán Đơn hình</h1>
             <p class="subtitle">Phương pháp Simplex</p>
         </header>
 
         <div class="content-wrapper">
-            <a href="/" class="back-button"> <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <!-- 
+              Thay đổi href để sử dụng history.back() cho việc quay lại trang trước.
+              Điều này đáng tin cậy hơn là cố gắng đoán URL của trang index.
+            -->
+            <a href="javascript:history.back()" class="back-button">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
                 </svg>
                 Quay lại trang trước
             </a>
 
             <div class="result-section">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                     <div>
                         <p class="label">Trạng thái:</p>
                         <p class="value" id="result-status">{{ result.status }}</p>
@@ -268,7 +253,7 @@
                     {% else %}
                     <div>
                         <p class="label">Giá trị tối ưu z*:</p>
-                        <p class="value" id="result-z">Không có</p>
+                        <p class="value" id="result-z">Không xác định</p>
                     </div>
                     {% endif %}
                 </div>
@@ -303,30 +288,46 @@
                 </h2>
                 <img src="data:image/png;base64,{{ plot_data }}" alt="Biểu đồ miền khả thi và nghiệm tối ưu" class="plot-image" id="plot-image-src">
             </div>
+            {% elif result.plot_error_message %}  <div class="result-section" id="plot-error-section">
+                 <h2 class="section-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Lỗi Hình ảnh hóa
+                </h2>
+                <p class="text-red-600">{{ result.plot_error_message }}</p>
+            </div>
             {% endif %}
 
             {% if result.steps and result.steps.items()|length > 0 %}
-            <div id="steps-section">
+            <div id="steps-section" class="mt-8">
                 <h2 class="section-title">
                      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                     </svg>
                     Chi tiết các bước
                 </h2>
-                <div id="result-steps">
+                <div id="result-steps" class="space-y-6">
                     {% for title, tableau in result.steps.items() %}
                     <div class="step-details">
                         <h3 class="step-title">{{ title }}</h3>
                         <pre>
-{% for var, expr in tableau.items() if var != 'z' %}{{ "%-4s = %s"|format(var, expr) }}
-{% endfor %}{{ "%-4s = %s"|format('z', tableau['z']) }}
+{% if tableau['z'] is not none %}
+{{ "%-4s = %s"|format('z', tableau['z']) }}
+{{ "─────────────────────────────────" }}
+{% endif -%}
+{% for var, expr in tableau.items() if var != 'z' -%}
+{{ "%-4s = %s"|format(var, expr) }}
+{% endfor %}
                         </pre>
                     </div>
                     {% endfor %}
                 </div>
             </div>
             {% endif %}
-        </div> </div> <footer class="footer">
+        </div> 
+    </div> 
+    <footer class="footer">
         <p>© 2025 Công cụ Giải Bài toán Quy hoạch Tuyến tính.</p>
     </footer>
 </body>
