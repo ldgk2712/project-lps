@@ -314,7 +314,7 @@
                         <pre>
 {% if tableau['z'] is not none %}
 {{ "%-4s = %s"|format('z', tableau['z']) }}
-{{ "─────────────────────────────────" }}
+{{ "───────────────────────────────────────────────────────" }}
 {% endif -%}
 {% for var, expr in tableau.items() if var != 'z' -%}
 {{ "%-4s = %s"|format(var, expr) }}
