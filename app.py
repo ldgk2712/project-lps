@@ -1,53 +1,65 @@
-from flask import Flask, render_template, request, jsonify 
+from flask import Flask, render_template, request, jsonify
 import io
 import base64
-from simplex import auto_simplex 
+from simplex_bland import auto_simplex # Đảm bảo import từ file simplex đã cập nhật
 import matplotlib
-matplotlib.use('Agg') 
+matplotlib.use('Agg') # Chạy matplotlib ở chế độ không GUI
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from fractions import Fraction
 
 app = Flask(__name__)
 
-# Cấu hình Matplotlib cho font (nếu cần hiển thị tiếng Việt trong biểu đồ)
-# plt.rcParams['font.family'] = 'DejaVu Sans' 
-# plt.rcParams['axes.unicode_minus'] = False
+# Sử dụng hằng số tolerance từ simplex.py nếu cần, hoặc định nghĩa một hằng số tương tự ở đây
+APP_TOLERANCE = 1e-9 
+
+def parse_number(val: str) -> float:
+    """Chuyển đổi chuỗi đầu vào thành số float, hỗ trợ cả dạng phân số."""
+    if not val or val.strip() == '':
+        raise ValueError("Đầu vào rỗng")
+    try:
+        return float(val)
+    except ValueError:
+        try:
+            # Thử chuyển đổi từ dạng a/b
+            return float(Fraction(val))
+        except (ValueError, ZeroDivisionError):
+            raise ValueError(f"Định dạng số không hợp lệ: '{val}'")
 
 @app.route('/', methods=['GET'])
 def index():
-    """Hiển thị form nhập liệu ban đầu."""
+    """Hiển thị trang nhập liệu chính."""
     default_num_vars = 2
     default_num_constraints = 2
     num_vars = request.args.get('num_vars', default_num_vars, type=int)
     num_constraints = request.args.get('num_constraints', default_num_constraints, type=int)
     error = request.args.get('error', None)
     
-    # Lấy lại các giá trị đã nhập từ query parameters nếu có lỗi và redirect
-    # Điều này giúp người dùng không phải nhập lại toàn bộ
-    # Đây là một cách đơn giản, cách phức tạp hơn có thể dùng session
+    # Khôi phục dữ liệu form nếu có lỗi để người dùng không phải nhập lại
     form_data = {}
-    if error: # Chỉ lấy lại dữ liệu nếu có lỗi được truyền về
+    if error:
         for key in request.args:
             if key not in ['num_vars', 'num_constraints', 'error']:
                 form_data[key] = request.args.get(key)
-
+                
     return render_template('index.html', 
                            num_vars=num_vars, 
-                           num_constraints=num_constraints, 
+                           num_constraints=num_constraints,
                            error=error,
-                           form_data=form_data) # Truyền form_data vào template
+                           form_data=form_data)
 
 @app.route('/solve', methods=['POST'])
 def solve():
-    """Xử lý dữ liệu form, giải bài toán và hiển thị kết quả."""
+    """Xử lý yêu cầu giải bài toán QHTT."""
     num_vars_input = request.form.get('num_vars')
     num_constraints_input = request.form.get('num_constraints')
-    
+
+    # Chuẩn bị context để render lại form nếu có lỗi
     error_context = {
         'num_vars': num_vars_input if num_vars_input and num_vars_input.isdigit() else 2,
         'num_constraints': num_constraints_input if num_constraints_input and num_constraints_input.isdigit() else 2,
-        'form_data': request.form # Giữ lại toàn bộ form data khi có lỗi
+        'form_data': request.form # Giữ lại toàn bộ dữ liệu form
     }
 
     try:
@@ -60,23 +72,22 @@ def solve():
 
         num_vars = int(num_vars_input)
         num_constraints = int(num_constraints_input)
-        
         error_context['num_vars'] = num_vars
         error_context['num_constraints'] = num_constraints
 
-        c = []
+        c = [] # Hệ số hàm mục tiêu
         for i in range(num_vars):
             val = request.form.get(f'c{i}')
             if val is None or val.strip() == '':
                 error_context['error'] = f"Hệ số mục tiêu c{i+1} bị thiếu hoặc rỗng."
                 return render_template('index.html', **error_context)
             try:
-                c.append(float(val))
+                c.append(parse_number(val))
             except ValueError:
                 error_context['error'] = f"Hệ số mục tiêu c{i+1} ('{val}') không phải số hợp lệ."
                 return render_template('index.html', **error_context)
 
-        A, b_constraints, constraint_types = [], [], [] # Đổi tên b thành b_constraints để tránh nhầm lẫn
+        A, b_constraints, constraint_types = [], [], [] # Ma trận A, vector b, loại ràng buộc
         for i in range(num_constraints):
             row = []
             for j in range(num_vars):
@@ -85,29 +96,29 @@ def solve():
                     error_context['error'] = f"Hệ số ràng buộc A[{i+1}][{j+1}] bị thiếu hoặc rỗng."
                     return render_template('index.html', **error_context)
                 try:
-                    row.append(float(val))
+                    row.append(parse_number(val))
                 except ValueError:
                     error_context['error'] = f"Hệ số ràng buộc A[{i+1}][{j+1}] ('{val}') không phải số hợp lệ."
                     return render_template('index.html', **error_context)
             A.append(row)
 
-            val = request.form.get(f'b{i}') # Đây là b của ràng buộc
+            val = request.form.get(f'b{i}')
             if val is None or val.strip() == '':
                 error_context['error'] = f"Hằng số vế phải b{i+1} bị thiếu hoặc rỗng."
                 return render_template('index.html', **error_context)
             try:
-                b_constraints.append(float(val))
+                b_constraints.append(parse_number(val))
             except ValueError:
                 error_context['error'] = f"Hằng số vế phải b{i+1} ('{val}') không phải số hợp lệ."
                 return render_template('index.html', **error_context)
-
+            
             constraint_type = request.form.get(f'constraint_type{i}')
             if constraint_type not in ['<=', '>=', '=']:
                 error_context['error'] = f"Loại ràng buộc cho dòng {i+1} không hợp lệ."
                 return render_template('index.html', **error_context)
             constraint_types.append(constraint_type)
 
-        variable_types = []
+        variable_types = [] # Loại biến (>=0, <=0, URS)
         for i in range(num_vars):
             var_type = request.form.get(f'var_type{i}')
             if var_type not in ['>=0', '<=0', 'URS']:
@@ -120,205 +131,233 @@ def solve():
             error_context['error'] = "Loại bài toán (Max/Min) không hợp lệ."
             return render_template('index.html', **error_context)
 
-        print(f"DEBUG: Calling auto_simplex with:")
-        print(f"  A: {A}")
-        print(f"  b: {b_constraints}")
-        print(f"  c: {c}")
-        print(f"  constraint_types: {constraint_types}")
-        print(f"  objective: {objective}")
-        print(f"  variable_types: {variable_types}")
-
+        # Gọi hàm giải Simplex
         result = auto_simplex(A, b_constraints, c, constraint_types, objective, variable_types)
-        print(f"DEBUG: Result from auto_simplex: {result}")
         
-        status_from_result = result.get('status', '').lower() # Lấy status và chuyển sang chữ thường
+        # Lấy trạng thái từ kết quả để kiểm tra
+        status_from_result_str = result.get('status', 'Lỗi (Error)') # Mặc định là lỗi nếu không có status
 
-        if status_from_result.startswith('lỗi'):
-            error_context['error'] = result['status']
+        if status_from_result_str.lower().startswith('lỗi'):
+            error_context['error'] = result.get('error_message', status_from_result_str)
+            # Thêm các bước giải (nếu có) vào context để debug
+            error_context['simplex_steps'] = result.get('steps') 
             return render_template('index.html', **error_context)
 
         plot_data = None
-        # Điều kiện để vẽ biểu đồ: 2 biến và trạng thái bắt đầu bằng "tối ưu" (không phân biệt hoa thường)
-        # và có solution
-        should_plot = (num_vars == 2 and 
-                       result.get('solution') and 
-                       (status_from_result.startswith('tối ưu') or status_from_result.startswith('vô số nghiệm')))
-
-        print(f"DEBUG: num_vars = {num_vars}")
-        print(f"DEBUG: result.get('solution') is not None: {result.get('solution') is not None}")
-        print(f"DEBUG: status_from_result: '{status_from_result}'")
-        print(f"DEBUG: Should plot? {should_plot}")
-        print(f"DEBUG: result['z'] type: {type(result['z'])}, value: {result['z']}")
-                
-        if should_plot:
+        # Điều kiện để vẽ đồ thị: chỉ vẽ khi có 2 biến
+        # và trạng thái không phải là lỗi.
+        # Việc có vẽ điểm tối ưu hay không sẽ do create_plot quyết định dựa trên solution và status.
+        should_try_plotting = (num_vars == 2 and not status_from_result_str.lower().startswith('lỗi'))
+        
+        if should_try_plotting:
             try:
-                plot_data = create_plot(A, b_constraints, constraint_types, c, result['solution'], variable_types, objective)
-                print("DEBUG: Plot created successfully.")
+                # Truyền cả solution và status vào hàm tạo đồ thị
+                plot_data = create_plot(
+                    A, b_constraints, constraint_types, 
+                    result.get('solution', {}), # Truyền solution, có thể rỗng
+                    variable_types, 
+                    status_from_result_str # Truyền chuỗi trạng thái
+                )
             except Exception as plot_error:
-                print(f"LỖI KHI TẠO BIỂU ĐỒ: {plot_error}")
                 app.logger.error(f"Lỗi khi tạo biểu đồ: {plot_error}", exc_info=True)
-                result['plot_error_message'] = f"Không thể tạo biểu đồ: {str(plot_error)[:100]}..." # Giới hạn độ dài thông báo lỗi
-
+                result['plot_error_message'] = f"Không thể tạo biểu đồ: {str(plot_error)[:100]}..."
+        
         return render_template('result.html', result=result, plot_data=plot_data)
 
+    except ValueError as ve: # Lỗi từ parse_number hoặc các kiểm tra đầu vào khác
+        app.logger.warning(f"Lỗi giá trị đầu vào: {ve}")
+        error_context['error'] = str(ve)
+        return render_template('index.html', **error_context)
     except Exception as e:
         app.logger.error(f"Lỗi không xác định trong /solve: {e}", exc_info=True)
-        error_context['error'] = f"Đã xảy ra lỗi không mong muốn. Vui lòng kiểm tra console của server. ({str(e)[:50]}...)"
+        error_context['error'] = f"Đã xảy ra lỗi không mong muốn. Vui lòng kiểm tra console của server. ({str(e)[:100]}...)"
         return render_template('index.html', **error_context)
 
 
-def create_plot(A_orig, b_orig, constraint_types_orig, c_orig, solution, variable_types, objective_type):
-    """Tạo biểu đồ miền khả thi và điểm tối ưu cho bài toán 2 biến."""
-    
-    A = [list(row) for row in A_orig]
-    b = list(b_orig)
-    constraint_types = list(constraint_types_orig)
-    c = list(c_orig)
-
-    plt.rc('font', family='DejaVu Sans') 
-    plt.rcParams['axes.unicode_minus'] = False
-
+def create_plot(A_orig, b_orig, constraint_types_orig, solution, variable_types, status_str):
+    """
+    Tạo biểu đồ miền khả thi và điểm tối ưu (nếu có) cho bài toán 2 biến.
+    solution: Dict chứa nghiệm {'x1': val1, 'x2': val2} hoặc rỗng.
+    status_str: Chuỗi trạng thái từ hàm giải Simplex (ví dụ: 'Tối ưu (Optimal)').
+    """
+    plt.rc('font', family='DejaVu Sans') # Đảm bảo font hỗ trợ Unicode
+    plt.rcParams['axes.unicode_minus'] = False # Hiển thị dấu trừ đúng cách
     fig, ax = plt.subplots(figsize=(10, 8))
 
-    plot_points_x = [0.0]  # Khởi tạo với float
-    plot_points_y = [0.0]
+    # Xác định xem có nên vẽ điểm tối ưu không
+    # Dựa vào việc 'solution' có giá trị và trạng thái là 'Tối ưu' hoặc 'Vô số nghiệm'
+    has_valid_solution_for_plot = False
+    x_opt, y_opt = None, None
+    if solution and (status_str.lower().startswith('tối ưu') or status_str.lower().startswith('vô số nghiệm')):
+        try:
+            x1_val_str = solution.get('x1')
+            x2_val_str = solution.get('x2')
+            if x1_val_str is not None and x2_val_str is not None:
+                x_opt = float(x1_val_str) # Giá trị đã được format_expression_for_printing
+                y_opt = float(x2_val_str)
+                has_valid_solution_for_plot = True
+        except (ValueError, TypeError):
+            # Nếu không chuyển đổi được (ví dụ nghiệm là tham số cho 'Vô số nghiệm'), không vẽ điểm
+            has_valid_solution_for_plot = False
+            app.logger.warning(f"Không thể chuyển đổi nghiệm tối ưu sang số để vẽ: x1='{solution.get('x1')}', x2='{solution.get('x2')}'")
 
-    # Check if solution values are numeric before plotting the optimal point
-    x1_val = solution.get('x1', '0.0')
-    x2_val = solution.get('x2', '0.0')
-    is_numeric_solution = True
-    try:
-        x_opt = float(x1_val)
-        y_opt = float(x2_val)
+
+    # Tạo lưới điểm để vẽ miền khả thi
+    # Xác định giới hạn cho các trục dựa trên giao điểm của các ràng buộc và điểm tối ưu (nếu có)
+    plot_points_x, plot_points_y = [0.0], [0.0] # Bắt đầu với gốc tọa độ
+    if has_valid_solution_for_plot:
         plot_points_x.append(x_opt)
         plot_points_y.append(y_opt)
-    except ValueError:
-        # If the solution is parametric (e.g., contains 't_w2'), skip plotting the optimal point
-        print(f"DEBUG: Skipping optimal point plotting due to parametric solution - x1: {x1_val}, x2: {x2_val}")
-        is_numeric_solution = False
 
-    # Continue with plotting the feasible region
-    for i in range(len(A)):
-        if abs(A[i][1]) > 1e-9: 
-            plot_points_y.append(b[i] / A[i][1])
+    for i in range(len(A_orig)):
+        # Giao điểm với trục x2 (x1=0)
+        if abs(A_orig[i][1]) > APP_TOLERANCE:
+            plot_points_y.append(b_orig[i] / A_orig[i][1])
             plot_points_x.append(0.0)
-        if abs(A[i][0]) > 1e-9: 
-            plot_points_x.append(b[i] / A[i][0])
+        # Giao điểm với trục x1 (x2=0)
+        if abs(A_orig[i][0]) > APP_TOLERANCE:
+            plot_points_x.append(b_orig[i] / A_orig[i][0])
             plot_points_y.append(0.0)
-    
-    for i in range(len(A)):
-        for j in range(i + 1, len(A)):
-            matrix_A_intersect = np.array([A[i], A[j]])
-            vector_b_intersect = np.array([b[i], b[j]])
-            try:
-                if abs(np.linalg.det(matrix_A_intersect)) > 1e-9:  # Kiểm tra định thức khác 0
+
+    for i in range(len(A_orig)):
+        for j in range(i + 1, len(A_orig)):
+            # Giải hệ A_intersect * X = b_intersect
+            matrix_A_intersect = np.array([A_orig[i], A_orig[j]])
+            vector_b_intersect = np.array([b_orig[i], b_orig[j]])
+            if abs(np.linalg.det(matrix_A_intersect)) > APP_TOLERANCE: # Kiểm tra tính khả nghịch
+                try:
                     intersect_pt = np.linalg.solve(matrix_A_intersect, vector_b_intersect)
                     plot_points_x.append(intersect_pt[0])
                     plot_points_y.append(intersect_pt[1])
-            except np.linalg.LinAlgError:
-                continue 
-
-    if not plot_points_x or not plot_points_y:  # Xử lý trường hợp list rỗng
-        print("CẢNH BÁO: Không có đủ điểm để xác định giới hạn biểu đồ.")
-        x_plot_min, x_plot_max = -5, 5  # Giá trị mặc định
-        y_plot_min, y_plot_max = -5, 5
-    else:
-        x_min_data, x_max_data = min(plot_points_x), max(plot_points_x)
-        y_min_data, y_max_data = min(plot_points_y), max(plot_points_y)
-        
-        margin_x = max(1.0, abs(x_max_data - x_min_data) * 0.25)  # Tăng margin
-        margin_y = max(1.0, abs(y_max_data - y_min_data) * 0.25)
-
-        x_plot_min = x_min_data - margin_x
-        x_plot_max = x_max_data + margin_x
-        y_plot_min = y_min_data - margin_y
-        y_plot_max = y_max_data + margin_y
+                except np.linalg.LinAlgError:
+                    pass # Bỏ qua nếu không giải được (song song/trùng)
     
-    if '>=0' in variable_types[0] and x_plot_min < -margin_x/3: x_plot_min = -margin_x/3
-    if '>=0' in variable_types[1] and y_plot_min < -margin_y/3: y_plot_min = -margin_y/3
+    # Giới hạn dữ liệu thô
+    x_min_data = min(plot_points_x) if plot_points_x else -1
+    x_max_data = max(plot_points_x) if plot_points_x else 1
+    y_min_data = min(plot_points_y) if plot_points_y else -1
+    y_max_data = max(plot_points_y) if plot_points_y else 1
 
-    x_line_vals = np.linspace(x_plot_min, x_plot_max, 400)
-    for i in range(len(A)):
-        a1, a2 = A[i][0], A[i][1]
-        bi = b[i]
-        
-        label_terms = []
-        if abs(a1) > 1e-9: label_terms.append(f"{a1:g}x₁")
-        if abs(a2) > 1e-9:
-            if a2 > 0 and label_terms: label_terms.append(f"+ {a2:g}x₂")
-            elif a2 < 0 and label_terms: label_terms.append(f"- {abs(a2):g}x₂")
-            else: label_terms.append(f"{a2:g}x₂")
+    # Lề cho tính toán (khá rộng để không bỏ sót miền khả thi)
+    margin_x = max(2.0, abs(x_max_data - x_min_data) * 0.5) 
+    margin_y = max(2.0, abs(y_max_data - y_min_data) * 0.5)
 
-        if not label_terms: label_terms.append("0")
-        
-        op_map = {'<=': '≤', '>=': '≥', '=': '='}
-        label = f"{' '.join(label_terms)} {op_map[constraint_types[i]]} {bi:g}"
-
-        if abs(a2) > 1e-9: 
-            y_line_vals = (bi - a1 * x_line_vals) / a2
-            ax.plot(x_line_vals, y_line_vals, label=label, lw=1.5)
-        elif abs(a1) > 1e-9: 
-            ax.axvline(x=bi / a1, label=label, lw=1.5)
-
-    if variable_types[0] == '>=0': ax.axvline(x=0, color='gray', linestyle='--', lw=1, label='x₁ ≥ 0')
-    if variable_types[0] == '<=0': ax.axvline(x=0, color='gray', linestyle='--', lw=1, label='x₁ ≤ 0')
-    if variable_types[1] == '>=0': ax.axhline(y=0, color='gray', linestyle='--', lw=1, label='x₂ ≥ 0')
-    if variable_types[1] == '<=0': ax.axhline(y=0, color='gray', linestyle='--', lw=1, label='x₂ ≤ 0')
-
-    X_grid, Y_grid = np.meshgrid(np.linspace(x_plot_min, x_plot_max, 200), 
-                                 np.linspace(y_plot_min, y_plot_max, 200))
-    feasible_mask = np.ones(X_grid.shape, dtype=bool)
-
-    for i in range(len(A)):
-        val = A[i][0] * X_grid + A[i][1] * Y_grid
-        if constraint_types[i] == '<=':
-            feasible_mask &= (val <= b[i] + 1e-6) 
-        elif constraint_types[i] == '>=':
-            feasible_mask &= (val >= b[i] - 1e-6)
-        elif constraint_types[i] == '=':
-            feasible_mask &= (np.abs(val - b[i]) < 1e-3) 
-
-    if variable_types[0] == '>=0': feasible_mask &= (X_grid >= -1e-6)
-    if variable_types[0] == '<=0': feasible_mask &= (X_grid <= 1e-6)
-    if variable_types[1] == '>=0': feasible_mask &= (Y_grid >= -1e-6)
-    if variable_types[1] == '<=0': feasible_mask &= (Y_grid <= 1e-6)
+    # Giới hạn tính toán ban đầu
+    calc_x_min, calc_x_max = x_min_data - margin_x, x_max_data + margin_x
+    calc_y_min, calc_y_max = y_min_data - margin_y, y_max_data + margin_y
     
-    ax.imshow(feasible_mask.astype(int), extent=(x_plot_min, x_plot_max, y_plot_min, y_plot_max),
+    # Điều chỉnh giới hạn dựa trên loại biến (>=0 hoặc <=0)
+    # Cho phép một chút không gian âm/dương nhỏ để trực quan hóa trục
+    small_axis_offset = 0.1 
+    if variable_types[0] == '>=0' and calc_x_min < -small_axis_offset * margin_x : calc_x_min = -small_axis_offset * margin_x
+    elif variable_types[0] == '<=0' and calc_x_max > small_axis_offset * margin_x : calc_x_max = small_axis_offset * margin_x
+    
+    if variable_types[1] == '>=0' and calc_y_min < -small_axis_offset * margin_y : calc_y_min = -small_axis_offset * margin_y
+    elif variable_types[1] == '<=0' and calc_y_max > small_axis_offset * margin_y : calc_y_max = small_axis_offset * margin_y
+
+    # Đảm bảo khoảng cách tối thiểu nếu các điểm rất gần nhau
+    if abs(calc_x_max - calc_x_min) < 1.0: calc_x_min -=0.5; calc_x_max +=0.5
+    if abs(calc_y_max - calc_y_min) < 1.0: calc_y_min -=0.5; calc_y_max +=0.5
+    
+    # Tạo lưới điểm cho imshow
+    grid_points = 250 # Độ chi tiết của lưới
+    x_grid = np.linspace(calc_x_min, calc_x_max, grid_points)
+    y_grid = np.linspace(calc_y_min, calc_y_max, grid_points)
+    X_mesh, Y_mesh = np.meshgrid(x_grid, y_grid)
+
+    # Xác định miền khả thi trên lưới
+    feasible_mask = np.ones(X_mesh.shape, dtype=bool)
+    for i in range(len(A_orig)):
+        val = A_orig[i][0] * X_mesh + A_orig[i][1] * Y_mesh
+        # Sử dụng APP_TOLERANCE cho so sánh
+        if constraint_types_orig[i] == '<=': feasible_mask &= (val <= b_orig[i] + APP_TOLERANCE)
+        elif constraint_types_orig[i] == '>=': feasible_mask &= (val >= b_orig[i] - APP_TOLERANCE)
+        elif constraint_types_orig[i] == '=': feasible_mask &= (np.abs(val - b_orig[i]) < APP_TOLERANCE)
+
+    # Áp dụng ràng buộc loại biến
+    if variable_types[0] == '>=0': feasible_mask &= (X_mesh >= -APP_TOLERANCE)
+    elif variable_types[0] == '<=0': feasible_mask &= (X_mesh <= APP_TOLERANCE)
+    if variable_types[1] == '>=0': feasible_mask &= (Y_mesh >= -APP_TOLERANCE)
+    elif variable_types[1] == '<=0': feasible_mask &= (Y_mesh <= APP_TOLERANCE)
+
+    # Vẽ miền khả thi
+    ax.imshow(feasible_mask.astype(int), extent=(calc_x_min, calc_x_max, calc_y_min, calc_y_max),
               origin='lower', cmap="Greens", alpha=0.3, aspect='auto')
 
-    # Plot the optimal point only if the solution is numeric
-    if is_numeric_solution and 'x1' in solution and 'x2' in solution:
-        ax.plot(x_opt, y_opt, 'o', color='red', markersize=10, label=f'Tối ưu: ({x_opt:.2f}, {y_opt:.2f})', zorder=5)
-        if objective_type in ['max', 'min'] and (abs(c[0]) > 1e-9 or abs(c[1]) > 1e-9):
-            z_opt = c[0] * x_opt + c[1] * y_opt
-            if abs(c[1]) > 1e-9: 
-                y_obj_line = (z_opt - c[0] * x_line_vals) / c[1]
-                ax.plot(x_line_vals, y_obj_line, linestyle='--', color='purple', lw=1.5, label=f'Đường mục tiêu z={z_opt:.2f}')
-            elif abs(c[0]) > 1e-9: 
-                ax.axvline(x=z_opt / c[0], linestyle='--', color='purple', lw=1.5, label=f'Đường mục tiêu z={z_opt:.2f}')
+    # Vẽ các đường thẳng ràng buộc
+    line_plot_x_vals = np.array([calc_x_min, calc_x_max]) # Dùng array để tính toán dễ hơn
+    for i in range(len(A_orig)):
+        a1, a2 = A_orig[i][0], A_orig[i][1]
+        bi = b_orig[i]
+        
+        label_terms = []
+        if abs(a1) > APP_TOLERANCE: label_terms.append(f"{a1:g}x₁")
+        if abs(a2) > APP_TOLERANCE:
+            op_str = " + " if a2 > 0 and label_terms else (" - " if a2 < 0 and label_terms else "")
+            val_str = f"{abs(a2):g}" if abs(abs(a2)-1.0) > APP_TOLERANCE or not label_terms else ""
+            if not label_terms and a2 < 0 : op_str = "-" # Trường hợp -x2
+            label_terms.append(f"{op_str}{val_str}x₂" if label_terms else f"{a2:g}x₂")
 
+        if not label_terms: label_terms.append("0") 
+        op_map = {'<=': '≤', '>=': '≥', '=': '='}
+        label = f"{''.join(label_terms)} {op_map[constraint_types_orig[i]]} {bi:g}"
+
+        if abs(a2) > APP_TOLERANCE: # Đường không thẳng đứng
+            y_line_vals = (bi - a1 * line_plot_x_vals) / a2
+            ax.plot(line_plot_x_vals, y_line_vals, label=label, lw=1.5)
+        elif abs(a1) > APP_TOLERANCE: # Đường thẳng đứng
+            ax.axvline(x=bi / a1, label=label, lw=1.5)
+
+    # Vẽ đường thẳng dấu của biến (nếu cần)
+    if variable_types[0] == '>=0': ax.axvline(x=0, color='gray', linestyle='--', lw=1, label='x₁ ≥ 0')
+    elif variable_types[0] == '<=0': ax.axvline(x=0, color='gray', linestyle='--', lw=1, label='x₁ ≤ 0')
+    if variable_types[1] == '>=0': ax.axhline(y=0, color='gray', linestyle='--', lw=1, label='x₂ ≥ 0')
+    elif variable_types[1] == '<=0': ax.axhline(y=0, color='gray', linestyle='--', lw=1, label='x₂ ≤ 0')
+
+    # Vẽ điểm tối ưu nếu có và hợp lệ
+    if has_valid_solution_for_plot:
+        ax.plot(x_opt, y_opt, 'o', color='red', markersize=8, markeredgecolor='black',
+                label=f'Tối ưu: ({x_opt:.2f}, {y_opt:.2f})', zorder=5)
+
+    # Đặt tiêu đề và nhãn
+    plot_title = "Biểu đồ miền khả thi"
+    if has_valid_solution_for_plot:
+        plot_title += " và điểm tối ưu"
+    # Thêm thông tin trạng thái vào tiêu đề nếu không phải tối ưu/vô số nghiệm
+    elif status_str.lower().startswith('vô nghiệm'):
+        plot_title += " (Vô nghiệm)"
+    elif status_str.lower().startswith('không giới nội'):
+        plot_title += " (Không giới nội)"
+    # Các trạng thái khác có thể được thêm vào đây nếu cần
+
+    ax.set_title(plot_title, fontsize=14)
     ax.set_xlabel("x₁", fontsize=12)
     ax.set_ylabel("x₂", fontsize=12)
-    ax.set_title("Biểu đồ miền khả thi và điểm tối ưu", fontsize=14)
-    ax.grid(True, linestyle=':', alpha=0.6)
+    ax.grid(True, linestyle=':', alpha=0.7)
     
-    handles, labels = ax.get_legend_handles_labels()
-    if handles:
-        ax.legend(handles, labels, fontsize=9, loc='center left', bbox_to_anchor=(1.01, 0.5))
+    # Xử lý legend
+    handles, labels_legend = ax.get_legend_handles_labels()
+    if handles: # Chỉ hiển thị legend nếu có gì để hiển thị
+        ax.legend(handles, labels_legend, fontsize=9, loc='center left', bbox_to_anchor=(1.01, 0.5))
+    
+    # Đặt giới hạn cuối cùng cho plot
+    ax.set_xlim(calc_x_min, calc_x_max)
+    ax.set_ylim(calc_y_min, calc_y_max)
 
-    ax.set_xlim(x_plot_min, x_plot_max)
-    ax.set_ylim(y_plot_min, y_plot_max)
+    fig.tight_layout(rect=[0, 0, 0.82, 1]) # Điều chỉnh để legend không bị cắt (0.80 -> 0.82)
 
-    fig.tight_layout(rect=[0, 0, 0.80, 1])
-
+    # Lưu biểu đồ vào buffer
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=100) 
+    plt.savefig(buf, format='png', dpi=100) # dpi=100 là đủ cho web
     buf.seek(0)
     plot_data_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-    plt.close(fig) 
-    
+    plt.close(fig) # Đóng figure để giải phóng bộ nhớ
+
     return plot_data_base64
 
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000)) 
+    # Lấy port từ biến môi trường hoặc dùng mặc định 5000
+    port = int(os.environ.get('PORT', 5000))
+    # Chạy app ở chế độ debug nếu FLASK_DEBUG=True
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_DEBUG', 'True').lower() == 'true')
