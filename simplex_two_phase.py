@@ -53,7 +53,7 @@ def format_expression_for_printing(expression: Any) -> str:
             var_sym = list(term.free_symbols)[0]
             coeff = term.coeff(var_sym)
         else:
-            logger.debug(f"Skipping unusual term in formatter: {term}")
+            # logger.debug(f"Skipping unusual term in formatter: {term}")
             continue
         if var_sym is not None: var_term_dict[var_sym] = var_term_dict.get(var_sym, S.Zero) + coeff
 
@@ -105,46 +105,31 @@ def _print_tableau(title: str, exprs: Dict[str, Any],
     log_output = [f"\n{'=' * 80}", f"{title:^80}", f"{'-' * 80}"]
 
     ordered_var_names = []
-    # YÊU CẦU: Đẩy hàng S (hoặc biến mục tiêu) lên đầu.
-    # Logic hiện tại đã thực hiện điều này:
-    # Biến mục tiêu (objective_var_name, ví dụ 'S' trong Pha 1) được thêm vào danh sách đầu tiên.
     if objective_var_name in exprs:
         ordered_var_names.append(objective_var_name)
 
-    # Lấy tất cả các khóa khác (không phải là hàm mục tiêu) từ bảng
     other_keys = [key for key in exprs.keys() if key != objective_var_name]
-
-    # Sắp xếp các khóa còn lại theo khóa Bland
     other_keys_sorted = sorted(other_keys, key=get_bland_key)
-
-    # Thêm các khóa đã sắp xếp vào danh sách hiển thị (sau biến mục tiêu)
     ordered_var_names.extend(other_keys_sorted)
 
     log_output.append(f"{'Biến':<15} | {'Biểu thức':<62}")
     log_output.append(f"{'-' * 15} | {'-' * 62}")
-    for var_name in ordered_var_names: # In theo thứ tự đã xác định
-        if var_name in exprs: # Đảm bảo chỉ in các biến có trong bảng hiện tại
+    for var_name in ordered_var_names:
+        if var_name in exprs:
             log_output.append(f"{var_name:<15} | {format_expression_for_printing(exprs[var_name]):<62}")
 
     if basic_vars or non_basic_vars:
         log_output.append(f"{'-' * 80}")
         if basic_vars:
-            # Sắp xếp danh sách biến cơ bản để hiển thị nhất quán
             sorted_display_basics = sorted([bv for bv in basic_vars if bv in exprs], key=get_bland_key)
-            log_output.append(f"Biến cơ bản    : {', '.join(sorted_display_basics)}")
+            log_output.append(f"Biến cơ sở    : {', '.join(sorted_display_basics)}")
         if non_basic_vars:
-            # Sắp xếp danh sách biến không cơ bản để hiển thị nhất quán
             sorted_display_non_basics = sorted(non_basic_vars, key=get_bland_key)
             log_output.append(f"Biến không cơ bản: {', '.join(sorted_display_non_basics)}")
     log_output.append(f"{'=' * 80}")
     logger.info("\n".join(log_output))
 
 def _get_ordered_tableau_for_history(tableau_dict: Dict[str, Expr], objective_var_name_param: str) -> List[Tuple[str, str]]:
-    """
-    Tạo một danh sách các (tên_biến, biểu_thức_đã_định_dạng) cho lịch sử các bước.
-    Dòng của biến mục tiêu (objective_var_name_param) sẽ được đặt ở đầu danh sách.
-    Các dòng khác được sắp xếp theo khóa Bland.
-    """
     ordered_vars = []
     if objective_var_name_param in tableau_dict:
         ordered_vars.append(objective_var_name_param)
@@ -161,8 +146,8 @@ def _get_ordered_tableau_for_history(tableau_dict: Dict[str, Expr], objective_va
 def _simplex_core_solver(
     initial_tableau: Dict[str, Expr], initial_basic_vars: List[str], initial_non_basic_vars: List[str],
     objective_var_name: str, phase_name: str,
-    is_maximization_problem: bool = False
-) -> Tuple[str, Optional[float], Dict[str, Expr], Dict[str, Expr], List[str], List[str], Dict[str, List[Tuple[str, str]]]]: # Thay đổi kiểu trả về cho steps_history
+    is_maximization_problem: bool = False # Thêm is_maximization_problem cho Pha 1 (luôn min)
+) -> Tuple[str, Optional[float], Dict[str, Expr], Dict[str, Expr], List[str], List[str], Dict[str, List[Tuple[str, str]]]]:
 
     current_tableau = {}
     for k, v_expr in initial_tableau.items():
@@ -170,9 +155,8 @@ def _simplex_core_solver(
             current_tableau[k] = v_expr
         elif hasattr(v_expr, 'copy'):
             try:
-                current_tableau[k] = v_expr.copy()
-            except TypeError as e:
-                logger.warning(f"TypeError during {k}.copy() for expr {v_expr} (type {type(v_expr)}). Error: {e}. Using sympify as fallback.")
+                current_tableau[k] = v_expr.copy() # type: ignore
+            except TypeError:
                 current_tableau[k] = sympify(v_expr)
         else:
             current_tableau[k] = v_expr
@@ -182,62 +166,63 @@ def _simplex_core_solver(
     basic_var_symbols = [Symbol(s) for s in basic_vars]
     non_basic_var_symbols = [Symbol(s) for s in non_basic_vars]
 
-    steps_history: Dict[str, List[Tuple[str, str]]] = {} # Thay đổi kiểu của steps_history
+    steps_history: Dict[str, List[Tuple[str, str]]] = {}
     step_counter = 0
     title_step_0 = f'{phase_name} - Bước {step_counter} (Bảng khởi tạo)'
-    # Lưu trữ bảng cho history với thứ tự dòng mục tiêu lên đầu
     steps_history[title_step_0] = _get_ordered_tableau_for_history(current_tableau, objective_var_name)
     _print_tableau(title_step_0, current_tableau, basic_vars, non_basic_vars, objective_var_name)
 
     max_iterations, iteration_count = 100, 0
     while iteration_count < max_iterations:
         iteration_count += 1
-        # Kiểm tra xem objective_var_name có trong current_tableau không trước khi truy cập
         if objective_var_name not in current_tableau:
             logger.error(f"{phase_name}: Biến mục tiêu '{objective_var_name}' không tìm thấy trong bảng hiện tại. Dừng lại.")
-            # Có thể trả về trạng thái lỗi ở đây nếu cần
             return 'Error', None, {}, current_tableau, basic_vars, non_basic_vars, steps_history
-
 
         objective_row_expr = current_tableau[objective_var_name]
         is_degenerate = any(
+            b_var_str in current_tableau and \
             current_tableau[b_var_str].subs({Symbol(nb_s): S.Zero for nb_s in non_basic_vars}).is_Number and \
             abs(float(current_tableau[b_var_str].subs({Symbol(nb_s): S.Zero for nb_s in non_basic_vars}).evalf())) < SIMPLEX_TOLERANCE
-            for b_var_str in basic_vars if b_var_str in current_tableau # Thêm kiểm tra b_var_str in current_tableau
+            for b_var_str in basic_vars
         )
+
         if is_degenerate: logger.info(f"{phase_name}: Phát hiện suy biến.")
 
         entering_var_sym: Optional[Symbol] = None
-        best_coeff_for_entering = S.Zero + SIMPLEX_TOLERANCE
+        # For Phase 1 (minimization of S=x0) and Phase 2 (minimization of -z_max or z_min),
+        # we look for negative coefficients in the objective row.
+        best_coeff_for_entering = S.Zero + SIMPLEX_TOLERANCE # Small positive number
         sorted_non_basic_candidates = sorted(non_basic_var_symbols, key=get_bland_key)
 
         if is_degenerate:
             for nb_sym_candidate in sorted_non_basic_candidates:
                 coeff_in_obj = objective_row_expr.coeff(nb_sym_candidate)
-                if coeff_in_obj.is_Number and float(coeff_in_obj.evalf()) < -SIMPLEX_TOLERANCE:
+                if coeff_in_obj.is_Number and float(coeff_in_obj.evalf()) < -SIMPLEX_TOLERANCE: # Negative coeff
                     entering_var_sym, best_coeff_for_entering = nb_sym_candidate, coeff_in_obj
                     logger.info(f"{phase_name} (Suy biến): Chọn biến vào {str(entering_var_sym)} (hệ số: {format_expression_for_printing(coeff_in_obj)}).")
                     break
         else:
             for nb_sym_candidate in sorted_non_basic_candidates:
                 coeff_in_obj = objective_row_expr.coeff(nb_sym_candidate)
-                if coeff_in_obj.is_Number and float(coeff_in_obj.evalf()) < float(best_coeff_for_entering.evalf() - SIMPLEX_TOLERANCE):
+                if coeff_in_obj.is_Number and float(coeff_in_obj.evalf()) < float(best_coeff_for_entering.evalf() - SIMPLEX_TOLERANCE): # Most negative
                     best_coeff_for_entering, entering_var_sym = coeff_in_obj, nb_sym_candidate
             if entering_var_sym: logger.info(f"{phase_name}: Chọn biến vào {str(entering_var_sym)} (hệ số: {format_expression_for_printing(best_coeff_for_entering)}).")
 
-        if entering_var_sym is None:
+
+        if entering_var_sym is None: # Optimality condition met
             status, has_alternative_optima = 'Optimal', False
             for nb_sym_check in non_basic_var_symbols:
                 obj_coeff = objective_row_expr.coeff(nb_sym_check)
-                if obj_coeff.is_Number and abs(float(obj_coeff.evalf())) < SIMPLEX_TOLERANCE:
+                if obj_coeff.is_Number and abs(float(obj_coeff.evalf())) < SIMPLEX_TOLERANCE: # Coeff is zero
                     if any(
-                        b_var_str_alt in current_tableau and # Thêm kiểm tra
-                        -current_tableau[b_var_str_alt].coeff(nb_sym_check).is_Number and \
-                        float(-current_tableau[b_var_str_alt].coeff(nb_sym_check).evalf()) > SIMPLEX_TOLERANCE
+                        b_var_str_alt in current_tableau and
+                        current_tableau[b_var_str_alt].coeff(nb_sym_check).is_Number and
+                        float(-current_tableau[b_var_str_alt].coeff(nb_sym_check).evalf()) > SIMPLEX_TOLERANCE # Pivot element > 0
                         for b_var_str_alt in basic_vars
                     ):
                         has_alternative_optima = True
-                        logger.info(f"{phase_name}: Có thể có nghiệm thay thế (biến {str(nb_sym_check)}).")
+                        logger.info(f"{phase_name}: Có thể có nghiệm thay thế (biến {str(nb_sym_check)} có hệ số 0 trong hàm mục tiêu và có thể vào cơ sở).")
                         break
             status = 'Multiple Optima' if has_alternative_optima else 'Optimal'
             logger.info(f"{phase_name}: {status}.")
@@ -246,7 +231,7 @@ def _simplex_core_solver(
         min_positive_ratio, potential_leaving_vars, found_positive_pivot_candidate = float('inf'), [], False
         for b_var_sym_candidate in basic_var_symbols:
             b_var_str_candidate = str(b_var_sym_candidate)
-            if b_var_str_candidate not in current_tableau: continue # Bỏ qua nếu biến cơ bản không có trong bảng (có thể xảy ra nếu có lỗi trước đó)
+            if b_var_str_candidate not in current_tableau: continue
             constraint_expr = current_tableau[b_var_str_candidate]
             pivot_column_coeff_in_row = -constraint_expr.coeff(entering_var_sym)
             if pivot_column_coeff_in_row.is_Number and float(pivot_column_coeff_in_row.evalf()) > SIMPLEX_TOLERANCE:
@@ -255,7 +240,7 @@ def _simplex_core_solver(
                 if rhs_val_expr.is_Number:
                     rhs_val = float(rhs_val_expr.evalf())
                     if rhs_val < -SIMPLEX_TOLERANCE:
-                        logger.debug(f"{phase_name}: RHS âm ({rhs_val:.4f}) cho {b_var_str_candidate}. Bỏ qua tỷ lệ."); continue
+                        logger.debug(f"{phase_name}: RHS âm ({rhs_val:.4f}) cho {b_var_str_candidate} với pivot dương. Bỏ qua tỷ lệ."); continue
                     actual_rhs_for_ratio = max(0, rhs_val)
                     pivot_val_float = float(pivot_column_coeff_in_row.evalf())
                     ratio = actual_rhs_for_ratio / pivot_val_float if pivot_val_float != 0 else float('inf')
@@ -264,7 +249,7 @@ def _simplex_core_solver(
 
         if not found_positive_pivot_candidate:
             status = 'Unbounded'
-            logger.warning(f"{phase_name}: Không giới nội (biến vào {str(entering_var_sym)}).")
+            logger.warning(f"{phase_name}: Không giới nội (biến vào {str(entering_var_sym)} không có pivot dương).")
             step_counter += 1
             title_unbounded = f'{phase_name} - Bước {step_counter} (Vào: {str(entering_var_sym)}, Không giới nội)'
             steps_history[title_unbounded] = _get_ordered_tableau_for_history(current_tableau, objective_var_name)
@@ -273,7 +258,7 @@ def _simplex_core_solver(
 
         if not potential_leaving_vars:
             status = 'Error'
-            logger.error(f"{phase_name}: Không tìm thấy biến ra cho {str(entering_var_sym)} (không có tỷ lệ hợp lệ).")
+            logger.error(f"{phase_name}: Không tìm thấy biến ra cho {str(entering_var_sym)} (không có tỷ lệ hợp lệ mặc dù có pivot dương).")
             break
 
         min_ratio_val = min(r for r, v_sym in potential_leaving_vars)
@@ -282,47 +267,35 @@ def _simplex_core_solver(
         if len(tied_leaving_vars) > 1 or is_degenerate:
             tied_leaving_vars.sort(key=get_bland_key)
             leaving_var_sym = tied_leaving_vars[0]
-            logger.info(f"{phase_name} (Hòa/Suy biến): Chọn biến ra {str(leaving_var_sym)} (tỷ lệ: {min_ratio_val:.4f}).")
+            logger.info(f"{phase_name} (Hòa/Suy biến): Chọn biến ra {str(leaving_var_sym)} (tỷ lệ: {min_ratio_val:.4f}, theo quy tắc Bland).")
         else:
             leaving_var_sym = tied_leaving_vars[0]
             logger.info(f"{phase_name}: Chọn biến ra {str(leaving_var_sym)} (tỷ lệ: {min_ratio_val:.4f}).")
 
         step_counter += 1
         logger.info(f"{phase_name} - --- Phép xoay Bước {step_counter} --- Vào: {str(entering_var_sym)}, Ra: {str(leaving_var_sym)}")
-        
-        # Kiểm tra leaving_var_sym có trong current_tableau không
+
         if str(leaving_var_sym) not in current_tableau:
             logger.error(f"{phase_name}: Biến rời '{str(leaving_var_sym)}' không tìm thấy trong bảng. Dừng xoay.")
-            status = 'Error'
-            break
-            
+            status = 'Error'; break
+
         pivot_row_expr_old = current_tableau[str(leaving_var_sym)]
         coeff_entering_in_pivot_row_expr = pivot_row_expr_old.coeff(entering_var_sym)
+
         if abs(float(coeff_entering_in_pivot_row_expr.evalf(chop=True))) < SIMPLEX_TOLERANCE / 100:
-            status = 'Error'; logger.error(f"{phase_name}: LỖI Pivot gần 0."); break
+            status = 'Error'; logger.error(f"{phase_name}: LỖI Pivot gần 0 ({coeff_entering_in_pivot_row_expr})."); break
 
         P_rest = simplify(pivot_row_expr_old - coeff_entering_in_pivot_row_expr * entering_var_sym)
         substitution_expr_for_entering_var = simplify((leaving_var_sym - P_rest) / coeff_entering_in_pivot_row_expr)
-        
-        new_tableau_temp = {} # Tạo bảng tạm thời để xây dựng
-        # Dòng pivot mới (biến vào trở thành cơ bản)
+
+        new_tableau_temp = {}
         new_tableau_temp[str(entering_var_sym)] = substitution_expr_for_entering_var
 
-        # Cập nhật các dòng khác, bao gồm cả dòng mục tiêu
         for var_name_iter, old_expr_iter in current_tableau.items():
-            if var_name_iter != str(leaving_var_sym): # Không cần xử lý dòng biến rời cũ nữa
-                 # Nếu var_name_iter là biến vào thì đã được xử lý ở trên, không cần thay thế chính nó
-                if var_name_iter == str(entering_var_sym):
-                    # Đối với dòng của biến vào (nay là dòng mục tiêu nếu tên trùng, hoặc dòng ràng buộc khác)
-                    # nếu nó không phải là dòng pivot cũ, nó vẫn cần được cập nhật
-                    # Tuy nhiên, logic này thường áp dụng cho các dòng *khác* dòng pivot và dòng biến vào mới
-                    # Xem xét lại logic này: dòng entering_var_sym đã được gán biểu thức mới
-                    # Các dòng khác (bao gồm cả objective_var_name nếu nó khác entering_var_sym) sẽ được thay thế
-                    pass # Đã được xử lý bởi new_tableau_temp[str(entering_var_sym)] = ...
-                else: # Các dòng khác (bao gồm cả dòng mục tiêu)
-                    new_tableau_temp[var_name_iter] = simplify(old_expr_iter.subs(entering_var_sym, substitution_expr_for_entering_var))
-        
-        current_tableau = new_tableau_temp # Gán lại bảng đã cập nhật hoàn chỉnh
+            if var_name_iter != str(leaving_var_sym):
+                new_tableau_temp[var_name_iter] = simplify(old_expr_iter.subs(entering_var_sym, substitution_expr_for_entering_var))
+
+        current_tableau = new_tableau_temp
 
         basic_vars.remove(str(leaving_var_sym)); basic_vars.append(str(entering_var_sym))
         non_basic_vars.remove(str(entering_var_sym)); non_basic_vars.append(str(leaving_var_sym))
@@ -344,21 +317,21 @@ def _simplex_core_solver(
         except Exception as e: logger.error(f"{phase_name}: Lỗi tính giá trị mục tiêu: {e}"); status = 'Error'
 
         for b_var_str in basic_vars:
-            if b_var_str in current_tableau: # Đảm bảo biến cơ bản có trong bảng cuối cùng
+            if b_var_str in current_tableau:
                  final_solution_expressions[b_var_str] = current_tableau[b_var_str]
-            else: # Xử lý trường hợp biến cơ bản không có trong bảng cuối (có thể do lỗi trước đó)
-                 final_solution_expressions[b_var_str] = S.Zero # Hoặc một giá trị mặc định phù hợp
+            else:
+                 final_solution_expressions[b_var_str] = S.Zero
                  logger.warning(f"{phase_name}: Biến cơ bản {b_var_str} không tìm thấy trong bảng cuối, gán giá trị 0.")
 
         for nb_var_str in non_basic_vars:
             is_param = False
-            if status == 'Multiple Optima' and objective_var_name in current_tableau: # Kiểm tra objective_var_name
+            if status == 'Multiple Optima' and objective_var_name in current_tableau:
                 obj_coeff = current_tableau[objective_var_name].coeff(Symbol(nb_var_str))
                 if obj_coeff.is_Number and abs(float(obj_coeff.evalf())) < SIMPLEX_TOLERANCE:
                     if any(
-                        bvs in current_tableau and # Kiểm tra bvs
+                        bvs in current_tableau and
                         current_tableau[bvs].coeff(Symbol(nb_var_str)).is_Number and \
-                        float(-current_tableau[bvs].coeff(Symbol(nb_var_str)).evalf()) > SIMPLEX_TOLERANCE
+                        abs(float(current_tableau[bvs].coeff(Symbol(nb_var_str)).evalf())) > SIMPLEX_TOLERANCE
                         for bvs in basic_vars
                     ):
                         is_param = True
@@ -410,11 +383,10 @@ def simplex_two_phase(
     logger.info(f"Biến gốc đã xử lý: {original_var_info_map}")
     logger.info(f"Các biến quyết định đã biến đổi (thứ tự cột A_eff): {[str(s) for s in decision_vars_transformed_symbols]}")
 
-    combined_steps: Dict[str, List[Tuple[str, str]]] = {} # Thay đổi kiểu của combined_steps
+    combined_steps: Dict[str, List[Tuple[str, str]]] = {}
 
     logger.info("\n" + "="*10 + " Bắt đầu Pha 1 (Phương pháp x0) " + "="*10)
     x0_sym = Symbol('x0')
-    decision_vars_for_phase1_tableau_symbols = decision_vars_transformed_symbols + [x0_sym]
 
     tableau_p1: Dict[str, Expr] = {}
     basic_vars_p1_initial: List[str] = []
@@ -425,229 +397,263 @@ def simplex_two_phase(
         w_name = f"w{i+1}"; w_sym = Symbol(w_name); w_symbols.append(w_sym)
         basic_vars_p1_initial.append(w_name)
 
-        expr_for_wj = x0_sym
-
-        current_b_orig = b_eff_exprs[i]
-        current_A_orig_coeffs = [A_eff[i][k_loop] for k_loop in range(len(decision_vars_transformed_symbols))]
+        expr_for_wj_terms = S.Zero # Phần sẽ cộng với x0
+        current_b_orig_val = b_eff_exprs[i]
+        current_A_orig_coeffs_row = [A_eff[i][k_loop] for k_loop in range(len(decision_vars_transformed_symbols))]
         constraint_type = constraint_types_orig[i]
 
+        sum_Ax_term_expr = S.Zero
+        for k_idx_wj, x_k_sym_wj_loop in enumerate(decision_vars_transformed_symbols):
+            sum_Ax_term_expr += current_A_orig_coeffs_row[k_idx_wj] * x_k_sym_wj_loop
+
         if constraint_type == '>=':
-            expr_for_wj += -current_b_orig
-            for k_idx_wj, x_k_sym_wj_loop in enumerate(decision_vars_transformed_symbols):
-                expr_for_wj += current_A_orig_coeffs[k_idx_wj] * x_k_sym_wj_loop
+            # Đối với Ax >= b, ta muốn w = x0 - b + Ax (để w >= 0 khi x0 đủ lớn)
+            # Vậy phần cộng với x0 là: -b + Ax
+            expr_for_wj_terms = -current_b_orig_val + sum_Ax_term_expr
         elif constraint_type == '<=' or constraint_type == '=':
-            expr_for_wj += current_b_orig
-            for k_idx_wj, x_k_sym_wj_loop in enumerate(decision_vars_transformed_symbols):
-                expr_for_wj -= current_A_orig_coeffs[k_idx_wj] * x_k_sym_wj_loop
+            # Đối với Ax <= b (hoặc Ax = b), ta muốn w = x0 + b - Ax
+            # Vậy phần cộng với x0 là: b - Ax
+            expr_for_wj_terms = current_b_orig_val - sum_Ax_term_expr
         else:
             logger.error(f"Loại ràng buộc không xác định: {constraint_type} cho ràng buộc {i}")
             return {'status': 'Lỗi', 'z': "N/A", 'solution': {}, 'steps': {}, 'error_message': f"Loại ràng buộc không hợp lệ: {constraint_type}"}
+        
+        tableau_p1[w_name] = simplify(x0_sym + expr_for_wj_terms)
 
-        tableau_p1[w_name] = simplify(expr_for_wj)
 
-    S_sym = Symbol('S'); tableau_p1[str(S_sym)] = x0_sym
+    S_sym = Symbol('S'); tableau_p1[str(S_sym)] = x0_sym # Mục tiêu S = x0
 
-    title_initial_wj_tableau = "Pha 1 - Bảng w_j ban đầu (trước tiền xử lý)"
+    title_initial_wj_tableau = "Pha 1 - Bảng w_j ban đầu (trước tiền xử lý x0)"
     _print_tableau(title_initial_wj_tableau, tableau_p1, basic_vars_p1_initial, non_basic_vars_p1_initial, str(S_sym))
-    # Lưu trữ bảng w_j ban đầu cho combined_steps với thứ tự dòng S lên đầu
     combined_steps[title_initial_wj_tableau] = _get_ordered_tableau_for_history(tableau_p1, str(S_sym))
 
+    min_const_in_wj, leaving_var_w_name_for_x0_pivot = S.Infinity, None
+    subs_for_const_check = {s: S.Zero for s in decision_vars_transformed_symbols}
 
-    min_rhs_val, leaving_var_w_name = S.Zero, None
     for w_name_check in basic_vars_p1_initial:
-        const_in_wj = tableau_p1[w_name_check].subs({s: S.Zero for s in decision_vars_for_phase1_tableau_symbols})
-        if const_in_wj.is_Number and float(const_in_wj.evalf()) < float(min_rhs_val.evalf() - SIMPLEX_TOLERANCE):
-            min_rhs_val, leaving_var_w_name = const_in_wj, w_name_check
+        const_part_of_wj_expr = tableau_p1[w_name_check].subs(x0_sym, S.Zero).subs(subs_for_const_check)
+        if const_part_of_wj_expr.is_Number and float(const_part_of_wj_expr.evalf()) < float(min_const_in_wj.evalf() if min_const_in_wj.is_Number else S.Infinity.evalf()) - SIMPLEX_TOLERANCE: #type: ignore
+             if float(const_part_of_wj_expr.evalf()) < -SIMPLEX_TOLERANCE:
+                min_const_in_wj = const_part_of_wj_expr
+                leaving_var_w_name_for_x0_pivot = w_name_check
 
     tableau_p1_pre_pivoted = {}
     for k,v in tableau_p1.items():
         if isinstance(v, Number): tableau_p1_pre_pivoted[k] = v
         elif hasattr(v, 'copy'):
-            try: tableau_p1_pre_pivoted[k] = v.copy()
+            try: tableau_p1_pre_pivoted[k] = v.copy() # type: ignore
             except TypeError: tableau_p1_pre_pivoted[k] = sympify(v)
         else: tableau_p1_pre_pivoted[k] = v
 
     basic_vars_p1_pre_pivoted, non_basic_vars_p1_pre_pivoted = basic_vars_p1_initial[:], non_basic_vars_p1_initial[:]
     phase_name_for_core_solver = "Phase 1"
 
-    if leaving_var_w_name is not None and float(min_rhs_val.evalf()) < -SIMPLEX_TOLERANCE:
-        logger.info(f"Pha 1 (Tiền xử lý): x0 vào cơ sở, {leaving_var_w_name} rời cơ sở.")
-        C_expr_for_prepivot = tableau_p1[leaving_var_w_name].subs({x0_sym: S.Zero})
-        expr_for_x0_pivot_val = Symbol(leaving_var_w_name) - C_expr_for_prepivot
-        expr_for_x0_pivot_val = simplify(expr_for_x0_pivot_val)
+    if leaving_var_w_name_for_x0_pivot is not None:
+        logger.info(f"Pha 1 (Tiền xử lý): x0 vào cơ sở, {leaving_var_w_name_for_x0_pivot} rời cơ sở để đảm bảo RHS không âm cho w_j.")
+        expr_for_x0_after_prepivot = Symbol(leaving_var_w_name_for_x0_pivot) - simplify(tableau_p1[leaving_var_w_name_for_x0_pivot].subs(x0_sym, S.Zero))
 
         temp_tableau_after_pre_pivot = {}
-        temp_tableau_after_pre_pivot[str(x0_sym)] = expr_for_x0_pivot_val
-        temp_tableau_after_pre_pivot[str(S_sym)] = expr_for_x0_pivot_val
+        temp_tableau_after_pre_pivot[str(x0_sym)] = expr_for_x0_after_prepivot
+        temp_tableau_after_pre_pivot[str(S_sym)] = expr_for_x0_after_prepivot
 
         for w_iter_name in basic_vars_p1_initial:
-            if w_iter_name != leaving_var_w_name:
-                 temp_tableau_after_pre_pivot[w_iter_name] = simplify(tableau_p1[w_iter_name].subs(x0_sym, expr_for_x0_pivot_val))
+            if w_iter_name != leaving_var_w_name_for_x0_pivot:
+                 temp_tableau_after_pre_pivot[w_iter_name] = simplify(tableau_p1[w_iter_name].subs(x0_sym, expr_for_x0_after_prepivot))
 
         tableau_p1_pre_pivoted = temp_tableau_after_pre_pivot
+        basic_vars_p1_pre_pivoted.remove(leaving_var_w_name_for_x0_pivot)
+        basic_vars_p1_pre_pivoted.append(str(x0_sym))
+        non_basic_vars_p1_pre_pivoted.remove(str(x0_sym))
+        non_basic_vars_p1_pre_pivoted.append(leaving_var_w_name_for_x0_pivot)
 
-        basic_vars_p1_pre_pivoted.remove(leaving_var_w_name); basic_vars_p1_pre_pivoted.append(str(x0_sym))
-        non_basic_vars_p1_pre_pivoted.remove(str(x0_sym)); non_basic_vars_p1_pre_pivoted.append(leaving_var_w_name)
-        basic_vars_p1_pre_pivoted.sort(key=get_bland_key); non_basic_vars_p1_pre_pivoted.sort(key=get_bland_key)
+        basic_vars_p1_pre_pivoted.sort(key=get_bland_key)
+        non_basic_vars_p1_pre_pivoted.sort(key=get_bland_key)
         phase_name_for_core_solver = "Phase 1 (Sau tiền xử lý x0)"
     else:
-        logger.info("Pha 1: Không cần tiền xử lý pivot cho x0.")
+        logger.info("Pha 1: Không cần tiền xử lý pivot cho x0 (các hằng số w_j đã không âm).")
 
     status_p1, min_S_value, sol_exprs_p1_core, final_tableau_p1, \
     final_basic_vars_p1, final_non_basic_vars_p1, steps_p1_from_core = _simplex_core_solver(
         tableau_p1_pre_pivoted, basic_vars_p1_pre_pivoted, non_basic_vars_p1_pre_pivoted,
-        str(S_sym), phase_name_for_core_solver
+        str(S_sym), phase_name_for_core_solver, is_maximization_problem=False
     )
 
     if steps_p1_from_core: combined_steps.update(steps_p1_from_core)
-
 
     if status_p1 not in ['Optimal', 'Multiple Optima'] or \
        (min_S_value is not None and abs(min_S_value) > SIMPLEX_TOLERANCE and min_S_value > 0):
         error_msg_val = f"{min_S_value:.2f}" if min_S_value is not None else "không xác định"
         logger.error(f"Pha 1 (x0): Vô nghiệm (min S = {error_msg_val} > 0).")
-        # combined_steps đã được cập nhật từ steps_p1_from_core
         return {'status': 'Vô nghiệm (Infeasible)', 'z': "N/A", 'solution': {}, 'steps': combined_steps,
                 'error_message': f"Pha 1 (x0) kết thúc với min S = {error_msg_val} > 0."}
 
-    if str(x0_sym) in final_basic_vars_p1 and str(x0_sym) in final_tableau_p1: # Thêm kiểm tra x0_sym trong final_tableau_p1
-        x0_val_expr_at_end_p1 = final_tableau_p1[str(x0_sym)].subs({Symbol(nb): S.Zero for nb in final_non_basic_vars_p1})
-        if x0_val_expr_at_end_p1.is_Number and abs(float(x0_val_expr_at_end_p1.evalf())) > SIMPLEX_TOLERANCE:
-            logger.error(f"Pha 1 (x0): Lỗi! x0 cơ bản với giá trị {format_expression_for_printing(x0_val_expr_at_end_p1)} != 0.")
-            # combined_steps đã được cập nhật
+    if str(x0_sym) in final_basic_vars_p1 and str(x0_sym) in final_tableau_p1:
+        x0_val_expr_at_end_p1 = final_tableau_p1[str(x0_sym)].subs({Symbol(nb): S.Zero for nb in final_non_basic_vars_p1 if nb != str(x0_sym)})
+        if x0_val_expr_at_end_p1.is_Number and abs(float(x0_val_expr_at_end_p1.evalf(chop=True))) > SIMPLEX_TOLERANCE:
+            logger.error(f"Pha 1 (x0): Lỗi! x0 cơ bản với giá trị {format_expression_for_printing(x0_val_expr_at_end_p1)} != 0 mặc dù min S = {min_S_value}.")
             return {'status': 'Vô nghiệm (Lỗi Pha 1)', 'z': "N/A", 'solution': {}, 'steps': combined_steps,
                     'error_message': f"Pha 1 (x0) lỗi: x0 cơ bản với giá trị {format_expression_for_printing(x0_val_expr_at_end_p1)}."}
         else:
-            logger.info(f"Pha 1 (x0): x0 cơ bản với giá trị 0. Sẽ loại bỏ.")
+            logger.info(f"Pha 1 (x0): x0 cơ bản với giá trị 0. Sẽ được coi là phi cơ sở trong Pha 2.")
+            if str(x0_sym) in final_basic_vars_p1: final_basic_vars_p1.remove(str(x0_sym))
+            if str(x0_sym) not in final_non_basic_vars_p1: final_non_basic_vars_p1.append(str(x0_sym))
+            # x0_sym is now definitely in final_non_basic_vars_p1 if it was basic and zero.
 
-    logger.info(f"Pha 1 (x0): Kết thúc (min S = {min_S_value if min_S_value is not None else 'N/A'}). Bắt đầu Pha 2.")
+
+    # --- START OF REVISED LOGIC FOR PHASE 2 SETUP (USER REQUEST) ---
+    logger.info(f"Pha 1 (x0): Kết thúc thành công (min S = {min_S_value if min_S_value is not None else 'N/A'}). Bắt đầu Pha 2.")
     logger.info("\n" + "="*10 + " Bắt đầu Pha 2 " + "="*10)
-    tableau_p2, basic_vars_p2, non_basic_vars_p2 = {}, [], []
 
-    for bv_p1_final in final_basic_vars_p1:
-        if bv_p1_final != str(x0_sym) and not bv_p1_final.startswith('w'):
-            basic_vars_p2.append(bv_p1_final)
-    for nbv_p1_final in final_non_basic_vars_p1:
-        if nbv_p1_final != str(x0_sym) and not nbv_p1_final.startswith('w'):
-            non_basic_vars_p2.append(nbv_p1_final)
+    tableau_p2: Dict[str, Expr] = {}
+    subs_x0_to_zero = {x0_sym: S.Zero} # Phép thế x0 = 0
 
-    all_transformed_dec_var_names_set = {str(s) for s in decision_vars_transformed_symbols}
-    current_p2_vars_set = set(basic_vars_p2 + non_basic_vars_p2)
-    for dec_var_name_check in all_transformed_dec_var_names_set:
-        if dec_var_name_check not in current_p2_vars_set:
-            logger.info(f"Biến quyết định {dec_var_name_check} không có trong cơ sở/phi cơ sở P2, thêm vào phi cơ sở P2 (giá trị 0).")
-            if dec_var_name_check not in non_basic_vars_p2: non_basic_vars_p2.append(dec_var_name_check)
-
+    # Xác định các biến cơ sở cho Pha 2:
+    # Là các biến cơ sở cuối Pha 1, loại bỏ S (mục tiêu Pha 1) và x0 (nếu nó còn là cơ sở - trường hợp này x0 đã được chuyển sang phi cơ sở nếu giá trị là 0).
+    basic_vars_p2 = [bv for bv in final_basic_vars_p1 if bv != str(S_sym) and bv != str(x0_sym)]
+    # Đảm bảo không có biến nào trùng lặp và sắp xếp
     basic_vars_p2 = sorted(list(set(basic_vars_p2)), key=get_bland_key)
-    non_basic_vars_p2 = sorted(list(set(non_basic_vars_p2)), key=get_bland_key)
 
-    subs_for_p2_tableau_build = {x0_sym: S.Zero}
-    for w_nb_p1_build in final_non_basic_vars_p1:
-        if w_nb_p1_build.startswith('w'): subs_for_p2_tableau_build[Symbol(w_nb_p1_build)] = S.Zero
-    for w_b_p1_build in final_basic_vars_p1:
-        if w_b_p1_build.startswith('w'): subs_for_p2_tableau_build[Symbol(w_b_p1_build)] = S.Zero
+    # Xác định các biến phi cơ sở cho Pha 2 (cho solver):
+    # Là các biến phi cơ sở cuối Pha 1, loại bỏ S và x0.
+    # x0 bị loại bỏ do phép thế. S là mục tiêu Pha 1.
+    # Các biến này sẽ tạo thành các cột của bảng Pha 2.
+    non_basic_vars_for_p2_solver = [
+        nb for nb in final_non_basic_vars_p1
+        if nb != str(S_sym) and nb != str(x0_sym)
+    ]
+    non_basic_vars_for_p2_solver = sorted(list(set(non_basic_vars_for_p2_solver)), key=get_bland_key)
 
-    for var_name_fp1, expr_fp1 in final_tableau_p1.items():
-        if var_name_fp1 in basic_vars_p2 and var_name_fp1 != str(S_sym): # Không copy dòng S từ pha 1 vào ràng buộc pha 2
-            tableau_p2[var_name_fp1] = simplify(expr_fp1.subs(subs_for_p2_tableau_build))
+    logger.info(f"P2 Setup: Biến cơ sở P2 dự kiến: {basic_vars_p2}")
+    logger.info(f"P2 Setup: Biến phi cơ sở P2 dự kiến (cho solver): {non_basic_vars_for_p2_solver}")
 
+    # Tạo các hàng cho biến cơ sở Pha 2 từ bảng cuối Pha 1, áp dụng x0=0.
+    for b_var_p2_str in basic_vars_p2:
+        if b_var_p2_str in final_tableau_p1:
+            expr_from_p1 = final_tableau_p1[b_var_p2_str]
+            # Thế x0 = 0 vào biểu thức này
+            expr_with_x0_zeroed = simplify(expr_from_p1.subs(subs_x0_to_zero))
+            tableau_p2[b_var_p2_str] = expr_with_x0_zeroed
+        else:
+            # Trường hợp này không nên xảy ra nếu basic_vars_p2 được suy ra đúng từ final_basic_vars_p1
+            # và tất cả các biến cơ sở đều có mục trong final_tableau_p1.
+            logger.warning(f"P2 Setup: Biến cơ sở P2 '{b_var_p2_str}' không có biểu thức trong final_tableau_p1. Gán là 0.")
+            tableau_p2[b_var_p2_str] = S.Zero # Dự phòng, có thể chỉ ra vấn đề.
 
+    # Xây dựng hàm mục tiêu gốc z cho Pha 2
     is_max_problem = objective_type_orig.lower() == 'max'
-    z_obj_expr_terms = S.Zero
+    z_original_expr = S.Zero
+    # c_eff_sympy_list chứa các hệ số cho các biến quyết định đã biến đổi
     for i_coeff_z, coeff_val_z in enumerate(c_eff_sympy_list):
-        z_obj_expr_terms += coeff_val_z * decision_vars_transformed_symbols[i_coeff_z]
+        z_original_expr += coeff_val_z * decision_vars_transformed_symbols[i_coeff_z]
 
-    objective_name_p2 = 'z_obj'
-    z_obj_expr_terms_no_x0 = z_obj_expr_terms.subs({x0_sym: S.Zero})
-    # Thay thế các biến w (nếu có) bằng 0 trong biểu thức z_obj
-    z_obj_expr_terms_no_w = z_obj_expr_terms_no_x0.subs(subs_for_p2_tableau_build)
-    tableau_p2[objective_name_p2] = simplify(-z_obj_expr_terms_no_w if is_max_problem else z_obj_expr_terms_no_w)
+    objective_name_p2 = 'z_obj' # Đây là biến mà core solver sẽ tối thiểu hóa
+
+    # Mục tiêu cho solver: tối thiểu hóa (-z_original) nếu là bài toán max, hoặc z_original nếu là bài toán min
+    current_z_expr_for_solver = -z_original_expr if is_max_problem else z_original_expr
+    current_z_expr_for_solver = simplify(current_z_expr_for_solver)
+    logger.debug(f"P2 Obj ban đầu (trước khi thế x0 và cơ sở P2): {format_expression_for_printing(current_z_expr_for_solver)}")
 
 
-    subs_basics_into_z_p2 = {Symbol(b_str_z): tableau_p2[b_str_z]
-                           for b_str_z in basic_vars_p2
-                           if Symbol(b_str_z) in tableau_p2[objective_name_p2].free_symbols and b_str_z in tableau_p2}
-    if subs_basics_into_z_p2:
-        tableau_p2[objective_name_p2] = simplify(tableau_p2[objective_name_p2].subs(subs_basics_into_z_p2))
+    # Bước 1: Thế x0 = 0 vào biểu thức mục tiêu này
+    current_z_expr_for_solver_no_x0 = simplify(current_z_expr_for_solver.subs(subs_x0_to_zero))
+    logger.debug(f"P2 Obj sau khi thế x0=0: {format_expression_for_printing(current_z_expr_for_solver_no_x0)}")
+
+    # Bước 2: Thế các biến cơ sở của Pha 2 (biểu thức của chúng trong tableau_p2 đã được áp dụng x0=0)
+    # vào current_z_expr_for_solver_no_x0.
+    substitutions_for_z = {}
+    for b_var_p2_str_for_z in basic_vars_p2: # Đây là các biến cơ sở P2
+        b_var_p2_sym_for_z = Symbol(b_var_p2_str_for_z)
+        # Kiểm tra xem biến cơ sở P2 này có nằm trong các biến tự do của hàm mục tiêu không
+        if b_var_p2_sym_for_z in current_z_expr_for_solver_no_x0.free_symbols:
+            if b_var_p2_str_for_z in tableau_p2: # Và chúng ta có biểu thức của nó theo các biến phi cơ sở P2
+                substitutions_for_z[b_var_p2_sym_for_z] = tableau_p2[b_var_p2_str_for_z]
+            else:
+                # Điều này chỉ ra một biến cơ sở P2 nằm trong hàm mục tiêu
+                # nhưng không hiểu sao biểu thức của nó không được thêm vào tableau_p2.
+                logger.error(f"P2 Setup: Biến cơ sở P2 '{b_var_p2_str_for_z}' (trong biểu thức z) không tìm thấy trong tableau_p2.")
+                # Có thể dự phòng hoặc báo lỗi. Hiện tại, ghi log và tiếp tục.
+                # Điều này có thể dẫn đến hàng mục tiêu không chính xác nếu biến không được thế ra.
+
+    if substitutions_for_z:
+        final_z_expr_for_tableau = simplify(current_z_expr_for_solver_no_x0.subs(substitutions_for_z))
+    else: # Không có biến cơ sở P2 nào trong biểu thức z (z đã được biểu diễn hoàn toàn qua phi cơ sở P2)
+        final_z_expr_for_tableau = current_z_expr_for_solver_no_x0
+
+    tableau_p2[objective_name_p2] = final_z_expr_for_tableau
+    logger.debug(f"P2 Obj cho Bảng (sau khi thế cơ sở P2): {format_expression_for_printing(final_z_expr_for_tableau)}")
+    # --- END OF REVISED LOGIC FOR PHASE 2 SETUP ---
+
 
     status_p2, z_solver_value, sol_exprs_p2, final_tableau_p2, \
-    final_basic_vars_p2, final_non_basic_vars_p2, steps_p2_from_core = _simplex_core_solver(
-        tableau_p2, basic_vars_p2, non_basic_vars_p2, objective_name_p2, "Phase 2")
+    final_basic_vars_p2_core, final_non_basic_vars_p2_core, steps_p2_from_core = _simplex_core_solver(
+        tableau_p2, basic_vars_p2, non_basic_vars_for_p2_solver, # Sử dụng non_basic_vars_for_p2_solver đã được tinh chỉnh
+        objective_name_p2, "Phase 2",
+        is_maximization_problem=False # Core solver luôn tối thiểu hóa objective_name_p2 được truyền vào
+    )
+    # Cập nhật final_basic_vars_p2 và final_non_basic_vars_p2 dựa trên output của core solver
+    final_basic_vars_p2 = final_basic_vars_p2_core
+    final_non_basic_vars_p2 = final_non_basic_vars_p2_core
+
 
     if steps_p2_from_core: combined_steps.update(steps_p2_from_core)
 
-
     final_z_value: Union[float, str, None] = "N/A"
     if z_solver_value is not None:
-        if status_p2 == 'Unbounded': final_z_value = float('inf') if is_max_problem else float('-inf')
+        if status_p2 == 'Unbounded':
+            final_z_value = float('inf') if is_max_problem else float('-inf')
         elif status_p2 in ['Optimal', 'Multiple Optima']:
             raw_z = -z_solver_value if is_max_problem else z_solver_value
             final_z_value = 0.0 if abs(raw_z) < SIMPLEX_TOLERANCE else raw_z
 
     solution_final_orig_vars: Dict[str, Any] = {}
     if status_p2 in ['Optimal', 'Multiple Optima'] and sol_exprs_p2:
-        final_subs_dict_p2_sol = {Symbol(nb_name_sol): expr_nb_sol
-                               for nb_name_sol, expr_nb_sol in sol_exprs_p2.items()
-                               if nb_name_sol in final_non_basic_vars_p2 and isinstance(expr_nb_sol, Expr)} # Thêm kiểm tra kiểu
+        final_subs_dict_for_sol_values = {}
+        for var_name, var_expr in sol_exprs_p2.items():
+            if var_name in final_non_basic_vars_p2:
+                if isinstance(var_expr, Symbol):
+                    final_subs_dict_for_sol_values[Symbol(var_name)] = var_expr
+                else:
+                    final_subs_dict_for_sol_values[Symbol(var_name)] = S.Zero
+
 
         for var_map_info in original_var_info_map:
             orig_var_name = var_map_info['original_name']
             val_expr_for_orig_var: Expr = S.Zero
+
             if var_map_info['type'] == '>=0':
-                transformed_sym = var_map_info['transformed_symbol']
-                # Lấy biểu thức từ sol_exprs_p2, nếu không có thì từ final_tableau_p2 (nếu là biến cơ bản)
-                expr_val = sol_exprs_p2.get(str(transformed_sym))
-                if expr_val is None and str(transformed_sym) in final_tableau_p2: # Nếu là biến cơ bản
-                     expr_val = final_tableau_p2[str(transformed_sym)]
-                elif expr_val is None: # Nếu không phải cơ bản và không có trong sol_exprs_p2 (ví dụ, không phải tham số)
-                     expr_val = S.Zero
-
-                if isinstance(expr_val, Expr): # Chỉ thay thế nếu là biểu thức
-                    val_expr_for_orig_var = expr_val.subs(final_subs_dict_p2_sol)
-                else: # Nếu là S.Zero hoặc Symbol() từ sol_exprs_p2
-                    val_expr_for_orig_var = expr_val
-
+                transformed_sym_str = var_map_info['transformed_name']
+                # transformed_sym = var_map_info['transformed_symbol'] # Not used directly here
+                expr_val_transformed = sol_exprs_p2.get(transformed_sym_str, S.Zero)
+                val_expr_for_orig_var = simplify(expr_val_transformed.subs(final_subs_dict_for_sol_values))
 
             elif var_map_info['type'] == '<=0':
-                transformed_sym = var_map_info['transformed_symbol']
-                expr_y_val = sol_exprs_p2.get(str(transformed_sym))
-                if expr_y_val is None and str(transformed_sym) in final_tableau_p2:
-                     expr_y_val = final_tableau_p2[str(transformed_sym)]
-                elif expr_y_val is None:
-                     expr_y_val = S.Zero
-
-                if isinstance(expr_y_val, Expr):
-                    val_expr_for_orig_var = -expr_y_val.subs(final_subs_dict_p2_sol)
-                else:
-                    val_expr_for_orig_var = -expr_y_val
-
+                transformed_sym_str = var_map_info['transformed_name']
+                # transformed_sym = var_map_info['transformed_symbol'] # Not used directly here
+                expr_y_val = sol_exprs_p2.get(transformed_sym_str, S.Zero)
+                val_expr_for_orig_var = simplify(-expr_y_val.subs(final_subs_dict_for_sol_values))
 
             elif var_map_info['type'] == 'URS':
-                p_sym, n_sym = var_map_info['p_symbol'], var_map_info['n_symbol']
-                expr_p_val = sol_exprs_p2.get(str(p_sym))
-                if expr_p_val is None and str(p_sym) in final_tableau_p2: expr_p_val = final_tableau_p2[str(p_sym)]
-                elif expr_p_val is None: expr_p_val = S.Zero
+                p_sym_str, n_sym_str = var_map_info['p_name'], var_map_info['n_name']
+                expr_p_val = sol_exprs_p2.get(p_sym_str, S.Zero)
+                expr_n_val = sol_exprs_p2.get(n_sym_str, S.Zero)
 
-                expr_n_val = sol_exprs_p2.get(str(n_sym))
-                if expr_n_val is None and str(n_sym) in final_tableau_p2: expr_n_val = final_tableau_p2[str(n_sym)]
-                elif expr_n_val is None: expr_n_val = S.Zero
+                p_val_sub = expr_p_val.subs(final_subs_dict_for_sol_values)
+                n_val_sub = expr_n_val.subs(final_subs_dict_for_sol_values)
+                val_expr_for_orig_var = simplify(p_val_sub - n_val_sub)
 
-                p_val_sub = expr_p_val.subs(final_subs_dict_p2_sol) if isinstance(expr_p_val, Expr) else expr_p_val
-                n_val_sub = expr_n_val.subs(final_subs_dict_p2_sol) if isinstance(expr_n_val, Expr) else expr_n_val
-                val_expr_for_orig_var = p_val_sub - n_val_sub
-
-            solution_final_orig_vars[orig_var_name] = format_expression_for_printing(simplify(val_expr_for_orig_var))
+            solution_final_orig_vars[orig_var_name] = format_expression_for_printing(val_expr_for_orig_var)
 
     status_map_vn = {'Optimal': 'Tối ưu (Optimal)', 'Multiple Optima': 'Vô số nghiệm (Multiple Optima)',
                      'Unbounded': 'Không giới nội (Unbounded)', 'Infeasible': 'Vô nghiệm (Infeasible)',
                      'Error': 'Lỗi (Error)', 'MaxIterations': 'Đạt giới hạn vòng lặp (Max Iterations)'}
-    final_status_str_vn = status_map_vn.get(status_p2 if status_p1 in ['Optimal', 'Multiple Optima'] or min_S_value is None or abs(min_S_value) < SIMPLEX_TOLERANCE else status_p1 , status_p2) # Ưu tiên status_p1 nếu nó là lỗi/vô nghiệm
 
-    # Nếu Pha 1 không tối ưu (ví dụ: Vô nghiệm), thì kết quả cuối cùng là của Pha 1
-    if not (status_p1 in ['Optimal', 'Multiple Optima'] and (min_S_value is None or abs(min_S_value) < SIMPLEX_TOLERANCE)):
+    final_status_str_vn: str
+    if status_p1 not in ['Optimal', 'Multiple Optima'] or \
+       (min_S_value is not None and abs(min_S_value) > SIMPLEX_TOLERANCE and min_S_value > 0):
         final_status_str_vn = status_map_vn.get(status_p1, status_p1)
-        # Nếu Pha 1 vô nghiệm, giá trị z không xác định
-        if status_p1 == 'Infeasible': final_z_value = "N/A"
+        if status_p1 == 'Infeasible' or (min_S_value is not None and min_S_value > 0) : final_z_value = "N/A"
+    else:
+        final_status_str_vn = status_map_vn.get(status_p2, status_p2)
 
 
     z_display_value: str
@@ -656,4 +662,4 @@ def simplex_two_phase(
     else: z_display_value = "inf" if final_z_value == float('inf') else ("-inf" if final_z_value == float('-inf') else f"{final_z_value:.2f}")
 
     return {'status': final_status_str_vn, 'z': z_display_value, 'solution': solution_final_orig_vars,
-            'steps': combined_steps, 'error_message': None}
+            'steps': combined_steps, 'error_message': None if status_p1 in ['Optimal', 'Multiple Optima'] and (min_S_value is None or abs(min_S_value) < SIMPLEX_TOLERANCE) else f"Pha 1 kết thúc với trạng thái {status_p1} và min S = {min_S_value}"}
