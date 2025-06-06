@@ -60,6 +60,7 @@ def solve():
     }
 
     try:
+        # --- (Phần parsing và validation giữ nguyên) ---
         if not num_vars_input or not num_vars_input.isdigit() or int(num_vars_input) < 1:
             error_context['error'] = "Số lượng biến (n) phải là số nguyên dương (≥1)."
             return render_template('index.html', **error_context)
@@ -127,25 +128,40 @@ def solve():
         if objective_str not in ['max', 'min']:
             error_context['error'] = "Loại bài toán (Max/Min) không hợp lệ."
             return render_template('index.html', **error_context)
-
-        # --- Giải bằng Phương pháp Đơn hình 2 Pha (luôn chạy) ---
-        app.logger.info("Bắt đầu giải bằng Đơn hình 2 Pha...")
-        result_two_phase = simplex_two_phase(
-            A_orig=A_matrix, 
-            b_orig=b_vector, 
-            c_orig=c_coeffs, 
-            constraint_types_orig=constraint_types_list, 
-            objective_type_orig=objective_str, 
-            variable_types_orig=variable_types_list
-        )
-        app.logger.info(f"Kết quả Đơn hình 2 Pha: {result_two_phase.get('status')}, Phase 1 Trivial: {result_two_phase.get('phase1_trivial')}")
+        # --- (Kết thúc phần parsing) ---
         
-        phase1_was_trivial_for_two_phase = result_two_phase.get('phase1_trivial', False)
-        result_bland = None 
+        # ***** LOGIC MỚI BẮT ĐẦU TỪ ĐÂY *****
+        
+        result_bland = None
+        result_two_phase = None
+        
+        # Kiểm tra xem có hằng số b_i nào âm không
+        has_negative_b = any(b < -APP_TOLERANCE for b in b_vector)
 
-        # --- Giải bằng Phương pháp Đơn hình (Bland) nếu phù hợp ---
-        if phase1_was_trivial_for_two_phase:
-            app.logger.info("Bài toán phù hợp để giải bằng Đơn hình (Bland) trực tiếp.")
+        if has_negative_b:
+            # Nếu có b_i < 0, chỉ giải bằng phương pháp 2 Pha
+            app.logger.info("Phát hiện có b_i < 0. Chỉ giải bằng phương pháp 2 Pha.")
+            
+            result_two_phase = simplex_two_phase(
+                A_orig=A_matrix, b_orig=b_vector, c_orig=c_coeffs,
+                constraint_types_orig=constraint_types_list,
+                objective_type_orig=objective_str,
+                variable_types_orig=variable_types_list
+            )
+            app.logger.info(f"Kết quả Đơn hình 2 Pha: {result_two_phase.get('status')}")
+            
+            # Đặt kết quả cho Bland là không áp dụng
+            result_bland = {
+                'status': 'Không áp dụng (Not Applicable)',
+                'z': "N/A", 'solution': {}, 'steps': {},
+                'error_message': "Phương pháp Đơn hình (Bland) này không được áp dụng trực tiếp vì có ít nhất một hằng số vế phải (bᵢ) âm.",
+                'parameter_conditions': ""
+            }
+        else:
+            # Nếu tất cả b_i >= 0, giải bằng Bland trước, sau đó là 2 Pha
+            app.logger.info("Tất cả b_i >= 0. Giải bằng Đơn hình (Bland) trước, sau đó là 2 Pha.")
+            
+            # 1. Giải bằng Đơn hình (Bland)
             try:
                 result_bland = auto_simplex(
                     A_matrix, b_vector, c_coeffs, constraint_types_list, 
@@ -155,25 +171,24 @@ def solve():
             except Exception as e_bland:
                 app.logger.error(f"Lỗi khi chạy auto_simplex (Bland): {e_bland}", exc_info=True)
                 result_bland = {
-                    'status': 'Lỗi (Error)', 
-                    'z': "N/A", 
-                    'solution': {}, 
-                    'steps': {}, 
+                    'status': 'Lỗi (Error)', 'z': "N/A", 'solution': {}, 'steps': {},
                     'error_message': f"Lỗi khi thực thi Đơn hình Bland: {str(e_bland)}",
                     'parameter_conditions': ""
                 }
-        else:
-            app.logger.info("Bài toán yêu cầu Pha 1 phức tạp, không giải bằng Đơn hình (Bland) trực tiếp.")
-            result_bland = {
-                'status': 'Không áp dụng (Not Applicable)',
-                'z': "N/A",
-                'solution': {},
-                'steps': {},
-                'error_message': "Phương pháp Đơn hình (Bland) này không được áp dụng vì bài toán có thể yêu cầu xử lý Pha 1 phức tạp (ví dụ: cần biến giả). Phương pháp 2 Pha đã được sử dụng.",
-                'parameter_conditions': ""
-            }
+            
+            # 2. Giải bằng Đơn hình 2 Pha
+            app.logger.info("Bắt đầu giải bằng Đơn hình 2 Pha...")
+            result_two_phase = simplex_two_phase(
+                A_orig=A_matrix, b_orig=b_vector, c_orig=c_coeffs,
+                constraint_types_orig=constraint_types_list,
+                objective_type_orig=objective_str,
+                variable_types_orig=variable_types_list
+            )
+            app.logger.info(f"Kết quả Đơn hình 2 Pha: {result_two_phase.get('status')}")
+            
+        # ***** KẾT THÚC LOGIC MỚI *****
         
-        # --- Tạo đồ thị (nếu là bài toán 2 biến) ---
+        # --- Tạo đồ thị (nếu là bài toán 2 biến) - Logic này không đổi ---
         plot_data_base64 = None
         plot_error_message = None
         if num_vars == 2:
@@ -181,9 +196,9 @@ def solve():
             solution_for_plot = {}
             status_for_plot = "Lỗi (Error)" 
             
-            # Ưu tiên kết quả từ two_phase nếu tối ưu, sau đó đến bland (nếu bland được chạy và thành công)
-            if result_two_phase.get('status', '').lower().startswith('tối ưu') or \
-               result_two_phase.get('status', '').lower().startswith('vô số nghiệm'):
+            # Ưu tiên kết quả từ two_phase nếu tối ưu, sau đó đến bland
+            if result_two_phase and (result_two_phase.get('status', '').lower().startswith('tối ưu') or \
+               result_two_phase.get('status', '').lower().startswith('vô số nghiệm')):
                 solution_for_plot = result_two_phase.get('solution', {})
                 status_for_plot = result_two_phase.get('status')
             elif result_bland and (result_bland.get('status', '').lower().startswith('tối ưu') or \

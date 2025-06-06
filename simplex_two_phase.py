@@ -477,7 +477,18 @@ def simplex_two_phase(
         tableau_p1_pre_pivoted, basic_vars_p1_pre_pivoted, non_basic_vars_p1_pre_pivoted,
         str(S_sym), phase_name_for_core_solver, is_maximization_problem=False
     )
-
+    
+    # Thêm logic xác định phase1_trivial
+    if status_p1 in ['Optimal', 'Multiple Optima'] and \
+    (min_S_value is None or abs(min_S_value) < SIMPLEX_TOLERANCE) and \
+    len(steps_p1_from_core) == 1:
+        phase1_trivial = True
+        logger.info("Pha 1 tầm thường: Không cần pivot, bài toán khả thi ngay từ đầu.")
+    else:
+        phase1_trivial = False
+        logger.info("Pha 1 không tầm thường: Yêu cầu pivot hoặc không khả thi.")
+    
+    
     if steps_p1_from_core: combined_steps.update(steps_p1_from_core)
 
     if status_p1 not in ['Optimal', 'Multiple Optima'] or \
