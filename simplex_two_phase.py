@@ -225,31 +225,15 @@ def _reconstruct_final_solution(
         # --- 4. Cấu trúc lại dữ liệu trả về theo giao diện yêu cầu ---
         solution_list = []
         for var_name, expr in sorted(solution_expressions.items()):
-            # --- START: MODIFICATION ---
-            # Theo yêu cầu, khi có vô số nghiệm, không hiển thị điểm tối ưu cụ thể
-            # mà chỉ hiển thị dạng tham số.
-            const_part = expr.as_coeff_Add()[0]
-            var_part = expr - const_part
-            
-            # Kiểm tra xem biến có phải là một tham số cơ sở không
-            is_base_parameter = expr.is_Symbol and str(expr) in parametric_vars
-            
-            if is_base_parameter:
-                # Nếu là tham số cơ sở (vd: w2), biểu thức chính là tên của nó
-                expression_str = format_expression_for_printing(expr)
-            else:
-                # Đối với các biến khác, chỉ hiển thị phần phụ thuộc tham số
-                expression_str = format_expression_for_printing(var_part)
-
-            # Nếu việc bỏ phần hằng số làm biểu thức = 0, nhưng giá trị ban đầu khác 0,
-            # điều đó có nghĩa là biến này có giá trị không đổi trong tập nghiệm.
-            # Ta cần hiển thị giá trị hằng số đó để tránh mất thông tin.
-            if expression_str == "0.00" and not is_base_parameter:
-                expression_str = format_expression_for_printing(const_part)
-            # --- END: MODIFICATION ---
+            # --- START: MODIFICATION (FIX) ---
+            # Sửa lỗi: Luôn định dạng toàn bộ biểu thức `expr` để bao gồm cả hệ số tự do
+            # và phần phụ thuộc tham số. Logic cũ đã loại bỏ không chính xác hệ số tự do.
+            expression_str = format_expression_for_printing(expr)
+            # --- END: MODIFICATION (FIX) ---
 
             note = ""
             params_in_expr = [p for p in parametric_vars if Symbol(p) in expr.free_symbols]
+            is_base_parameter = expr.is_Symbol and str(expr) in parametric_vars
 
             if params_in_expr:
                 specific_conditions = sorted([param_condition_strings.get(p, f"{p} >= 0") for p in params_in_expr])
