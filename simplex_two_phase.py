@@ -1,21 +1,54 @@
-# simplex_two_phase.py
-
 import logging
-from typing import List, Dict, Tuple, Any, Union, Optional, Set
+from typing import List, Dict, Tuple, Any, Union, Optional
 from sympy import simplify, solve, Symbol, S, sympify, Add, Mul, Number, Expr
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-SIMPLEX_TOLERANCE = 1e-9 # Dung sai cho so sánh số thực
+# Dung sai cho các phép so sánh số thực
+SIMPLEX_TOLERANCE = 1e-9
 
-# --- Các hàm trợ giúp ---
+def get_bland_key(var_obj: Union[str, Symbol]) -> Tuple[int, int, int, str]:
+    """
+    Tạo khóa để sắp xếp các biến theo quy tắc Bland, ưu tiên x, y, w, a và các hậu tố _p, _n.
+    x, y: biến quyết định (y là biến thay thế cho x <= 0)
+    w: biến bù
+    a: biến giả
+    x_p, x_n: thành phần dương và âm của biến URS
+    """
+    var_name_str = str(var_obj)
+    type_priority = 99
+    main_index = 9999
+    sub_index = 0 # _p sẽ là 1, _n sẽ là 2
+
+    if '_p' in var_name_str:
+        sub_index = 1
+        base_name = var_name_str[:-2]
+    elif '_n' in var_name_str:
+        sub_index = 2
+        base_name = var_name_str[:-2]
+    else:
+        base_name = var_name_str
+
+    if base_name.startswith('x') or base_name.startswith('y'):
+        type_priority = 0
+    elif base_name.startswith('w'):
+        type_priority = 1
+    elif base_name.startswith('a') or base_name == 'x0': # x0 là biến giả trong pha 1
+        type_priority = 2
+    
+    try:
+        numeric_part = ''.join(filter(str.isdigit, base_name))
+        main_index = int(numeric_part) if numeric_part else (0 if len(base_name) == 1 else 9998)
+    except ValueError:
+        pass # Giữ giá trị mặc định nếu không có số
+
+    return (type_priority, main_index, sub_index, var_name_str)
+
 
 def format_expression_for_printing(expression: Any) -> str:
-    """
-    Định dạng biểu thức SymPy để in, làm tròn số đến 2 chữ số thập phân và sắp xếp các số hạng.
-    """
+    """Định dạng biểu thức SymPy để in, làm tròn và sắp xếp các số hạng."""
     if not isinstance(expression, (Add, Mul, Symbol, Number, Expr)):
         try:
             expression = sympify(expression)
@@ -47,440 +80,435 @@ def format_expression_for_printing(expression: Any) -> str:
     for term in terms_to_process:
         coeff, var_part = term.as_coeff_Mul()
         var_sym: Optional[Symbol] = None
-        if var_part == S.One and term.is_Symbol: var_sym = term
-        elif var_part != S.One and var_part.is_Symbol: var_sym = var_part
+        # Đảm bảo var_part là một Symbol duy nhất
+        if var_part.is_Symbol:
+            var_sym = var_part
+        # Xử lý trường hợp var_part là một tích (ví dụ: 2.0*x1)
         elif len(term.free_symbols) == 1:
             var_sym = list(term.free_symbols)[0]
             coeff = term.coeff(var_sym)
-        else:
+        else: # Bỏ qua các số hạng phức tạp không mong muốn
             continue
+            
         if var_sym is not None: var_term_dict[var_sym] = var_term_dict.get(var_sym, S.Zero) + coeff
 
-    sorted_var_symbols = sorted(var_term_dict.keys(), key=lambda s: get_bland_key(str(s)))
+    sorted_var_symbols = sorted(var_term_dict.keys(), key=get_bland_key)
+    
     var_str_list = []
     for var_sym in sorted_var_symbols:
         coeff = var_term_dict[var_sym]
         try:
             coeff_val = float(coeff.evalf(chop=True))
             if abs(coeff_val) < SIMPLEX_TOLERANCE / 100: continue
+            
             sign = "+ " if coeff_val > 0 else "- "
             abs_coeff_val = abs(coeff_val)
+            
             term_str_val_part = str(var_sym) if abs(abs_coeff_val - 1.0) < SIMPLEX_TOLERANCE else f"{abs_coeff_val:.2f}*{var_sym}"
             var_str_list.append((sign, term_str_val_part))
-        except (TypeError, ValueError):
-            if coeff == S.One: var_str_list.append(("+ ", str(var_sym)))
-            elif coeff == S.NegativeOne: var_str_list.append(("- ", str(var_sym)))
-            else: var_str_list.append(("+ ", f"{str(coeff)}*{var_sym}"))
+        except (TypeError, ValueError): # Nếu hệ số là biểu thức
+            sign_str = "+ " if not coeff.is_negative else "- "
+            abs_coeff = abs(coeff)
+            term_str_val_part = str(var_sym) if abs_coeff == 1 else f"{abs_coeff}*{var_sym}"
+            var_str_list.append((sign_str, term_str_val_part))
 
     if not var_str_list: return const_str
+    
     result_str = const_str if const_str != "0.00" else ""
     for i, (sign, term_s) in enumerate(var_str_list):
-        if result_str: result_str += f" {sign}{term_s}"
-        else: result_str = term_s if sign == "+ " else f"-{term_s}"
+        if result_str:
+            result_str += f" {sign}{term_s}"
+        else:
+            result_str = term_s if sign == "+ " else f"-{term_s}"
+            
     return result_str if result_str else "0.00"
 
-def get_bland_key(var_obj: Union[str, Symbol]) -> Tuple[int, int, int, str]:
-    var_name_str = str(var_obj)
-    type_priority, main_index, sub_index = 99, 9999, 0
-    base_name = var_name_str
-    if var_name_str.endswith('_p'): sub_index, base_name = 1, var_name_str[:-2]
-    elif var_name_str.endswith('_n'): sub_index, base_name = 2, var_name_str[:-2]
-
-    if base_name == 'x0': type_priority = -1
-    elif base_name.startswith('x') or base_name.startswith('y'): type_priority = 0
-    elif base_name.startswith('w') or base_name.startswith('s') or base_name.startswith('u'): type_priority = 1
-    elif base_name.startswith('a'): type_priority = 2
-
-    try:
-        numeric_part = ''.join(filter(str.isdigit, base_name))
-        main_index = int(numeric_part) if numeric_part else (0 if len(base_name) == 1 and type_priority == 0 else 9998)
-    except ValueError: pass
-    return (type_priority, main_index, sub_index, var_name_str)
-
-def _print_tableau(title: str, exprs: Dict[str, Any],
-                   basic_vars: Optional[List[str]] = None,
-                   non_basic_vars: Optional[List[str]] = None,
-                   objective_var_name: str = 'S') -> None:
-    log_output = [f"\n{'=' * 80}", f"{title:^80}", f"{'-' * 80}"]
-
-    ordered_var_names = []
-    if objective_var_name in exprs:
-        ordered_var_names.append(objective_var_name)
-
-    other_keys = [key for key in exprs.keys() if key != objective_var_name]
-    other_keys_sorted = sorted(other_keys, key=get_bland_key)
-    ordered_var_names.extend(other_keys_sorted)
-
-    log_output.append(f"{'Biến':<15} | {'Biểu thức':<62}")
-    log_output.append(f"{'-' * 15} | {'-' * 62}")
-    for var_name in ordered_var_names:
-        if var_name in exprs:
-            log_output.append(f"{var_name:<15} | {format_expression_for_printing(exprs[var_name]):<62}")
-
-    if basic_vars or non_basic_vars:
-        log_output.append(f"{'-' * 80}")
-        if basic_vars:
-            sorted_display_basics = sorted([bv for bv in basic_vars if bv in exprs], key=get_bland_key)
-            log_output.append(f"Biến cơ sở    : {', '.join(sorted_display_basics)}")
-        if non_basic_vars:
-            sorted_display_non_basics = sorted(non_basic_vars, key=get_bland_key)
-            log_output.append(f"Biến không cơ bản: {', '.join(sorted_display_non_basics)}")
-    log_output.append(f"{'=' * 80}")
-    logger.info("\n".join(log_output))
-
-def _get_ordered_tableau_for_history(tableau_dict: Dict[str, Expr], objective_var_name_param: str) -> List[Tuple[str, str]]:
+def _get_ordered_tableau_for_history(tableau_dict: Dict[str, Expr], objective_var_name: str) -> List[Tuple[str, str]]:
+    """Sắp xếp và định dạng bảng để lưu vào lịch sử các bước."""
     ordered_vars = []
-    if objective_var_name_param in tableau_dict:
-        ordered_vars.append(objective_var_name_param)
-
+    if objective_var_name in tableau_dict:
+        ordered_vars.append(objective_var_name)
+    
     other_keys_list = sorted(
-        [k for k in tableau_dict.keys() if k != objective_var_name_param],
+        [k for k in tableau_dict.keys() if k != objective_var_name], 
         key=get_bland_key
     )
     ordered_vars.extend(other_keys_list)
-
+    
     return [(var, format_expression_for_printing(tableau_dict[var])) for var in ordered_vars if var in tableau_dict]
 
 def _get_current_solution_values(
-    current_tableau: Dict[str, Any], 
-    basic_var_names: List[str],
-    non_basic_var_names: List[str],
+    tableau: Dict[str, Expr], 
+    basic_vars: List[str], 
+    non_basic_vars: List[str],
     original_var_info_map: List[Dict[str, Any]]
 ) -> Dict[str, float]:
-    """
-    Tính toán giá trị số của các biến quyết định gốc tại một bước nhất định.
-    Hàm này được sao chép từ simplex_bland.py để đảm bảo tính nhất quán.
-    """
-    solution_values_numeric = {}
-    subs_dict = {Symbol(nb): 0 for nb in non_basic_var_names}
-
-    tableau_vars_values = {}
-    for b_var in basic_var_names:
-        val = 0.0
-        if b_var in current_tableau:
-            expr_val = current_tableau[b_var].subs(subs_dict)
-            if expr_val.is_Number:
-                try:
-                    val = float(expr_val.evalf())
-                except (TypeError, ValueError):
-                    val = 0.0
-        tableau_vars_values[b_var] = val
+    """Tính toán giá trị của các biến GỐC tại một bước nhất định để vẽ đồ thị."""
+    subs_dict = {Symbol(nb): 0 for nb in non_basic_vars}
     
-    for nb_var in non_basic_var_names:
-        tableau_vars_values[nb_var] = 0.0
-
+    # Tính giá trị của tất cả các biến trong bảng (biến tableau)
+    tableau_vars_values = {nb: 0.0 for nb in non_basic_vars}
+    for bv in basic_vars:
+        val = 0.0
+        if bv in tableau:
+            try:
+                # Thay các biến không cơ sở bằng 0
+                val = float(tableau[bv].subs(subs_dict).evalf())
+            except (TypeError, ValueError): 
+                pass
+        tableau_vars_values[bv] = val
+        
+    # Từ giá trị biến tableau, tính ngược lại giá trị biến gốc
+    solution_values_numeric = {}
     for info in original_var_info_map:
-        original_var_name = info['original_name']
+        original_name = info['original_name']
         
         if info.get('is_standard', False):
-            tableau_name = info['transformed_name']
-            solution_values_numeric[original_var_name] = tableau_vars_values.get(tableau_name, 0.0)
+            tableau_name = info['tableau_name']
+            solution_values_numeric[original_name] = tableau_vars_values.get(tableau_name, 0.0)
         
-        elif info.get('is_negated', False):
-            tableau_name = info['transformed_name']
-            solution_values_numeric[original_var_name] = -tableau_vars_values.get(tableau_name, 0.0)
+        elif info.get('is_transformed_neg', False):
+            tableau_name = info['tableau_name']
+            solution_values_numeric[original_name] = -tableau_vars_values.get(tableau_name, 0.0)
             
         elif info.get('is_urs', False):
-            pos_name = info['p_name']
-            neg_name = info['n_name']
+            pos_name = info['pos_name']
+            neg_name = info['neg_name']
             pos_val = tableau_vars_values.get(pos_name, 0.0)
             neg_val = tableau_vars_values.get(neg_name, 0.0)
-            solution_values_numeric[original_var_name] = pos_val - neg_val
+            solution_values_numeric[original_name] = pos_val - neg_val
             
     return solution_values_numeric
 
-
-# --- Bộ giải Simplex lõi (_simplex_core_solver) ---
-def _simplex_core_solver(
-    initial_tableau: Dict[str, Expr], initial_basic_vars: List[str], initial_non_basic_vars: List[str],
-    objective_var_name: str, phase_name: str,
-    original_var_info_map: List[Dict[str, Any]],
-    is_maximization_problem: bool = False
-) -> Tuple[str, Optional[float], Dict[str, Expr], Dict[str, Expr], List[str], List[str], Dict[str, Dict[str, Any]]]:
-
-    current_tableau = {}
-    for k, v_expr in initial_tableau.items():
-        if isinstance(v_expr, Number):
-            current_tableau[k] = v_expr
-        elif hasattr(v_expr, 'copy'):
-            try:
-                current_tableau[k] = v_expr.copy()
-            except TypeError:
-                current_tableau[k] = sympify(v_expr)
+def _reconstruct_final_solution(
+    final_tableau: Dict[str, Expr], 
+    final_basic_vars: List[str], 
+    final_non_basic_vars: List[str],
+    original_var_info_map: List[Dict[str, Any]]
+) -> Dict[str, str]:
+    """Tính và định dạng giá trị nghiệm cuối cùng cho các biến gốc."""
+    final_values_numeric = _get_current_solution_values(
+        final_tableau, final_basic_vars, final_non_basic_vars, original_var_info_map
+    )
+    
+    solution_formatted = {}
+    for name, value in final_values_numeric.items():
+        # Sửa lỗi hiển thị "-0.00"
+        if abs(value) < SIMPLEX_TOLERANCE:
+            solution_formatted[name] = "0.00"
         else:
-            current_tableau[k] = v_expr
+            solution_formatted[name] = f"{value:.2f}"
+            
+    return solution_formatted
 
+def _simplex_core_solver(
+    initial_tableau: Dict[str, Expr], 
+    initial_basic_vars: List[str], 
+    initial_non_basic_vars: List[str],
+    objective_var_name: str, 
+    phase_name: str, 
+    original_var_info_map: List[Dict[str, Any]]
+) -> Tuple[str, Optional[float], Dict[str, Expr], Dict[str, Any], List[str], List[str]]:
+    """Lõi giải Simplex, giải bài toán MIN, sử dụng quy tắc Bland."""
+    tableau = {k: sympify(v) for k, v in initial_tableau.items()}
     basic_vars = initial_basic_vars[:]
     non_basic_vars = initial_non_basic_vars[:]
     
-    steps_history: Dict[str, Dict[str, Any]] = {}
-    step_counter = 0
-    title_step_0 = f'{phase_name} - Bước {step_counter} (Bảng khởi tạo)'
-    
-    coords_step_0_dict = _get_current_solution_values(current_tableau, basic_vars, non_basic_vars, original_var_info_map)
-    coords_step_0_list = [coords_step_0_dict.get('x1', 0.0), coords_step_0_dict.get('x2', 0.0)]
-
-    steps_history[title_step_0] = {
-        'tableau': _get_ordered_tableau_for_history(current_tableau, objective_var_name),
-        'coords': coords_step_0_list
-    }
-    _print_tableau(title_step_0, current_tableau, basic_vars, non_basic_vars, objective_var_name)
-
+    steps_history: Dict[str, Any] = {}
     max_iterations, iteration_count = 100, 0
+    
+    # Ghi lại trạng thái ban đầu (sau khi đã xoay pivot cho pha 1 nếu cần)
+    title_initial = f'{phase_name} - Bước {"1 (Sau xoay khởi đầu)" if phase_name == "Phase 1" else "0 (Bảng khởi tạo Pha 2)"}'
+    coords_dict_initial = _get_current_solution_values(tableau, basic_vars, non_basic_vars, original_var_info_map)
+    # Lấy tên biến gốc (x1, x2, ...) để đảm bảo thứ tự tọa độ
+    original_var_names_sorted = sorted([info['original_name'] for info in original_var_info_map])
+    steps_history[title_initial] = {
+        'tableau': _get_ordered_tableau_for_history(tableau, objective_var_name),
+        'coords': [coords_dict_initial.get(name, 0.0) for name in original_var_names_sorted],
+    }
+    
+    current_step_num = 1 if phase_name == "Phase 1" else 0
+
     while iteration_count < max_iterations:
         iteration_count += 1
-        basic_var_symbols = [Symbol(s) for s in basic_vars]
-        non_basic_var_symbols = [Symbol(s) for s in non_basic_vars]
-        if objective_var_name not in current_tableau:
-            logger.error(f"{phase_name}: Biến mục tiêu '{objective_var_name}' không tìm thấy trong bảng hiện tại. Dừng lại.")
-            return 'Error', None, {}, current_tableau, basic_vars, non_basic_vars, steps_history
-
-        objective_row_expr = current_tableau[objective_var_name]
-        is_degenerate = any(
-            b_var_str in current_tableau and \
-            current_tableau[b_var_str].subs({Symbol(nb_s): S.Zero for nb_s in non_basic_vars}).is_Number and \
-            abs(float(current_tableau[b_var_str].subs({Symbol(nb_s): S.Zero for nb_s in non_basic_vars}).evalf())) < SIMPLEX_TOLERANCE
-            for b_var_str in basic_vars
-        )
-
-        if is_degenerate: logger.info(f"{phase_name}: Phát hiện suy biến.")
-
-        entering_var_sym: Optional[Symbol] = None
-        best_coeff_for_entering = S.Zero + SIMPLEX_TOLERANCE
-        sorted_non_basic_candidates = sorted(non_basic_var_symbols, key=get_bland_key)
-
-        if is_degenerate:
-            for nb_sym_candidate in sorted_non_basic_candidates:
-                coeff_in_obj = objective_row_expr.coeff(nb_sym_candidate)
-                if coeff_in_obj.is_Number and float(coeff_in_obj.evalf()) < -SIMPLEX_TOLERANCE:
-                    entering_var_sym = nb_sym_candidate
-                    break
-        else:
-            for nb_sym_candidate in sorted_non_basic_candidates:
-                coeff_in_obj = objective_row_expr.coeff(nb_sym_candidate)
-                if coeff_in_obj.is_Number and float(coeff_in_obj.evalf()) < float(best_coeff_for_entering.evalf() - SIMPLEX_TOLERANCE):
-                    best_coeff_for_entering, entering_var_sym = coeff_in_obj, nb_sym_candidate
-
-        if entering_var_sym is None:
-            status = 'Optimal'
-            logger.info(f"{phase_name}: {status}.")
-            break
-
-        min_positive_ratio, potential_leaving_vars, found_positive_pivot_candidate = float('inf'), [], False
-        for b_var_sym_candidate in basic_var_symbols:
-            b_var_str_candidate = str(b_var_sym_candidate)
-            if b_var_str_candidate not in current_tableau: continue
-            constraint_expr = current_tableau[b_var_str_candidate]
-            pivot_column_coeff_in_row = -constraint_expr.coeff(entering_var_sym)
-            if pivot_column_coeff_in_row.is_Number and float(pivot_column_coeff_in_row.evalf()) > SIMPLEX_TOLERANCE:
-                found_positive_pivot_candidate = True
-                rhs_val_expr = constraint_expr.subs({Symbol(nb_s): S.Zero for nb_s in non_basic_vars})
-                if rhs_val_expr.is_Number:
-                    rhs_val = float(rhs_val_expr.evalf())
-                    if rhs_val >= -SIMPLEX_TOLERANCE:
-                        actual_rhs_for_ratio = max(0, rhs_val)
-                        pivot_val_float = float(pivot_column_coeff_in_row.evalf())
-                        ratio = actual_rhs_for_ratio / pivot_val_float if pivot_val_float != 0 else float('inf')
-                        potential_leaving_vars.append((ratio, b_var_sym_candidate))
-
-        if not found_positive_pivot_candidate:
-            status = 'Unbounded'
-            coords_unbounded_dict = _get_current_solution_values(current_tableau, basic_vars, non_basic_vars, original_var_info_map)
-            coords_unbounded_list = [coords_unbounded_dict.get('x1', 0.0), coords_unbounded_dict.get('x2', 0.0)]
-            title_unbounded = f'{phase_name} - Bước {step_counter+1} (Vào: {str(entering_var_sym)}, Không giới nội)'
-            steps_history[title_unbounded] = {
-                'tableau': _get_ordered_tableau_for_history(current_tableau, objective_var_name),
-                'coords': coords_unbounded_list
-            }
-            break
-
-        min_ratio_val = min(r for r, v_sym in potential_leaving_vars)
-        tied_leaving_vars = [v_sym for r, v_sym in potential_leaving_vars if abs(r - min_ratio_val) < SIMPLEX_TOLERANCE]
-        tied_leaving_vars.sort(key=get_bland_key)
-        leaving_var_sym = tied_leaving_vars[0]
-
-        step_counter += 1
+        obj_row_expr = tableau[objective_var_name]
         
-        pivot_row_expr_old = current_tableau[str(leaving_var_sym)]
-        coeff_entering_in_pivot_row_expr = pivot_row_expr_old.coeff(entering_var_sym)
+        # 1. Chọn biến vào (Entering variable) theo quy tắc Bland
+        entering_var_sym: Optional[Symbol] = None
+        # Sắp xếp các ứng viên không cơ sở theo quy tắc Bland
+        sorted_candidates = sorted([Symbol(s) for s in non_basic_vars], key=get_bland_key)
 
-        P_rest = simplify(pivot_row_expr_old - coeff_entering_in_pivot_row_expr * entering_var_sym)
-        substitution_expr_for_entering_var = simplify((leaving_var_sym - P_rest) / coeff_entering_in_pivot_row_expr)
+        for candidate_sym in sorted_candidates:
+            coeff = obj_row_expr.coeff(candidate_sym)
+            if coeff.is_Number and float(coeff.evalf()) < -SIMPLEX_TOLERANCE:
+                entering_var_sym = candidate_sym
+                break
+        
+        if entering_var_sym is None: # Đã tối ưu
+            obj_val = float(obj_row_expr.as_coeff_Add()[0].evalf(chop=True))
+            return 'Optimal', obj_val, tableau, steps_history, basic_vars, non_basic_vars
 
-        new_tableau_temp = {str(entering_var_sym): substitution_expr_for_entering_var}
-        for var_name_iter, old_expr_iter in current_tableau.items():
-            if var_name_iter != str(leaving_var_sym):
-                new_tableau_temp[var_name_iter] = simplify(old_expr_iter.subs(entering_var_sym, substitution_expr_for_entering_var))
-
-        current_tableau = new_tableau_temp
-
-        basic_vars.remove(str(leaving_var_sym)); basic_vars.append(str(entering_var_sym))
-        non_basic_vars.remove(str(entering_var_sym)); non_basic_vars.append(str(leaving_var_sym))
-
-        title_step_n = f'{phase_name} - Bước {step_counter} (Vào: {str(entering_var_sym)}, Ra: {str(leaving_var_sym)})'
-        coords_step_n_dict = _get_current_solution_values(current_tableau, basic_vars, non_basic_vars, original_var_info_map)
-        coords_step_n_list = [coords_step_n_dict.get('x1', 0.0), coords_step_n_dict.get('x2', 0.0)]
-        steps_history[title_step_n] = {
-            'tableau': _get_ordered_tableau_for_history(current_tableau, objective_var_name),
-            'coords': coords_step_n_list
-        }
-        _print_tableau(title_step_n, current_tableau, basic_vars, non_basic_vars, objective_var_name)
-
-    if iteration_count >= max_iterations: status = "MaxIterations"
-
-    final_objective_value: Optional[float] = None
-    final_solution_expressions: Dict[str, Expr] = {}
-    if status == 'Optimal' or status == 'Multiple Optima':
-        obj_expr_at_opt = current_tableau.get(objective_var_name, S.Zero)
-        subs_final_nb_to_zero = {Symbol(nb_s): S.Zero for nb_s in non_basic_vars}
-        try: final_objective_value = float(obj_expr_at_opt.subs(subs_final_nb_to_zero).evalf(chop=True))
-        except Exception: status = 'Error'
-
+        # 2. Chọn biến ra (Leaving variable) theo quy tắc Bland
+        potential_leaving = []
         for b_var_str in basic_vars:
-            final_solution_expressions[b_var_str] = current_tableau.get(b_var_str, S.Zero)
-        for nb_var_str in non_basic_vars:
-            final_solution_expressions[nb_var_str] = S.Zero
+            row_expr = tableau[b_var_str]
+            # Hệ số của biến vào trong hàng ràng buộc
+            coeff_in_row = row_expr.coeff(entering_var_sym)
+            
+            # Chỉ xét các hệ số pivot > 0 (tức là hệ số trong biểu thức < 0)
+            if coeff_in_row.is_Number and float(coeff_in_row.evalf()) < -SIMPLEX_TOLERANCE:
+                const_term = float(row_expr.as_coeff_Add()[0].evalf(chop=True))
+                ratio = const_term / -float(coeff_in_row.evalf())
+                if ratio >= -SIMPLEX_TOLERANCE: # Chấp nhận tỉ số không âm
+                    potential_leaving.append((ratio, Symbol(b_var_str)))
+        
+        if not potential_leaving:
+            return 'Unbounded', None, tableau, steps_history, basic_vars, non_basic_vars
 
-    elif status == 'Unbounded': final_objective_value = float('-inf')
-    return status, final_objective_value, final_solution_expressions, current_tableau, basic_vars, non_basic_vars, steps_history
+        # Tìm tỉ số nhỏ nhất
+        min_ratio_val = min(r for r, _ in potential_leaving)
+        # Nếu có nhiều tỉ số bằng nhau, chọn biến ra theo quy tắc Bland
+        tied_vars = [v for r, v in potential_leaving if abs(r - min_ratio_val) < SIMPLEX_TOLERANCE]
+        leaving_var_sym = sorted(tied_vars, key=get_bland_key)[0]
+        
+        # 3. Xoay (Pivot)
+        entering_var_str, leaving_var_str = str(entering_var_sym), str(leaving_var_sym)
+        
+        pivot_row_expr = tableau[leaving_var_str]
+        coeff_entering_in_pivot = pivot_row_expr.coeff(entering_var_sym)
+        
+        # Biểu thức mới cho biến vào
+        expr_for_entering_var = simplify((Symbol(leaving_var_str) - (pivot_row_expr - coeff_entering_in_pivot * entering_var_sym)) / coeff_entering_in_pivot)
 
-# --- Hàm Simplex Hai Pha Chính ---
+        # Cập nhật bảng
+        new_tableau = {var: expr.subs(entering_var_sym, expr_for_entering_var) for var, expr in tableau.items() if var != leaving_var_str}
+        new_tableau[entering_var_str] = expr_for_entering_var
+        tableau = {k: simplify(v) for k, v in new_tableau.items()}
+
+        # Cập nhật danh sách biến cơ sở và không cơ sở
+        basic_vars.remove(leaving_var_str)
+        basic_vars.append(entering_var_str)
+        non_basic_vars.remove(entering_var_str)
+        non_basic_vars.append(leaving_var_str)
+        
+        # Ghi lại bước này
+        current_step_num += 1
+        title = f'{phase_name} - Bước {current_step_num} (Vào: {entering_var_str}, Ra: {leaving_var_str})'
+        coords_dict = _get_current_solution_values(tableau, basic_vars, non_basic_vars, original_var_info_map)
+        steps_history[title] = {
+            'tableau': _get_ordered_tableau_for_history(tableau, objective_var_name),
+            'coords': [coords_dict.get(name, 0.0) for name in original_var_names_sorted],
+        }
+
+    return "MaxIterations", None, tableau, steps_history, basic_vars, non_basic_vars
+
 def simplex_two_phase(
     A_orig: List[List[float]], b_orig: List[float], c_orig: List[float],
     constraint_types_orig: List[str], variable_types_orig: List[str],
     objective_type_orig: str = 'max'
 ) -> Dict[str, Any]:
     
-    A_processed, b_processed, constraint_types_processed = [], [], []
-    has_equality = any(ct.strip() == '=' for ct in constraint_types_orig)
-    if has_equality:
-        for i, constraint_type in enumerate(constraint_types_orig):
-            if constraint_type.strip() == '=':
-                A_processed.append(A_orig[i]); b_processed.append(b_orig[i]); constraint_types_processed.append('<=')
-                A_processed.append(A_orig[i]); b_processed.append(b_orig[i]); constraint_types_processed.append('>=')
-            else:
-                A_processed.append(A_orig[i]); b_processed.append(b_orig[i]); constraint_types_processed.append(constraint_type)
-    else:
-        A_processed, b_processed, constraint_types_processed = A_orig, b_orig, constraint_types_orig
-    
     num_original_vars = len(c_orig)
-    num_constraints = len(b_processed)
+    m_orig = len(A_orig)
+    is_max_problem = objective_type_orig.lower() == 'max'
+    status_map_vn = {'Optimal': 'Tối ưu', 'Unbounded': 'Không giới nội', 'Infeasible': 'Vô nghiệm', 'Error': 'Lỗi', 'MaxIterations': 'Đạt giới hạn lặp'}
 
+    # === BƯỚC 1: CHUẨN HÓA BIẾN ( xử lý <=0 và URS) ===
+    tableau_decision_symbols: List[Symbol] = []
+    c_tableau: List[float] = []
     original_var_info_map: List[Dict[str, Any]] = []
-    A_eff_cols: List[List[Expr]] = [[] for _ in range(num_constraints)]
-    c_eff_sympy_list: List[Expr] = []
-    decision_vars_transformed_symbols: List[Symbol] = []
 
     for i in range(num_original_vars):
         original_name = f"x{i+1}"
-        var_type = variable_types_orig[i]
-        var_info = {'original_name': original_name, 'original_idx': i, 'type': var_type}
+        var_type = variable_types_orig[i].strip()
+        info: Dict[str, Any] = {'original_name': original_name, 'type': var_type, 'original_idx': i}
+
         if var_type == '<=0':
-            y_name = f"y{i + 1}"; y_sym = Symbol(y_name)
-            for r in range(num_constraints): A_eff_cols[r].append(-S(A_processed[r][i]))
-            c_eff_sympy_list.append(-S(c_orig[i])); decision_vars_transformed_symbols.append(y_sym)
-            var_info.update({'transformed_name': y_name, 'transformed_symbol': y_sym, 'is_negated': True})
+            y_name = f"y{i+1}"
+            info.update({'tableau_name': y_name, 'is_transformed_neg': True})
+            tableau_decision_symbols.append(Symbol(y_name))
+            c_tableau.append(-c_orig[i])
         elif var_type == 'URS':
-            p_name = f"{original_name}_p"; p_sym = Symbol(p_name)
-            n_name = f"{original_name}_n"; n_sym = Symbol(n_name)
-            for r in range(num_constraints): A_eff_cols[r].extend([S(A_processed[r][i]), -S(A_processed[r][i])])
-            c_eff_sympy_list.extend([S(c_orig[i]), -S(c_orig[i])]); decision_vars_transformed_symbols.extend([p_sym, n_sym])
-            var_info.update({'p_name': p_name, 'p_symbol': p_sym, 'n_name': n_name, 'n_symbol': n_sym, 'is_urs': True})
+            pos_name, neg_name = f"x{i+1}_p", f"x{i+1}_n"
+            info.update({'pos_name': pos_name, 'neg_name': neg_name, 'is_urs': True})
+            tableau_decision_symbols.extend([Symbol(pos_name), Symbol(neg_name)])
+            c_tableau.extend([c_orig[i], -c_orig[i]])
         else: # '>=0'
-            x_sym = Symbol(original_name)
-            for r in range(num_constraints): A_eff_cols[r].append(S(A_processed[r][i]))
-            c_eff_sympy_list.append(S(c_orig[i])); decision_vars_transformed_symbols.append(x_sym)
-            var_info.update({'transformed_name': original_name, 'transformed_symbol': x_sym, 'is_standard': True})
-        original_var_info_map.append(var_info)
+            info.update({'tableau_name': original_name, 'is_standard': True})
+            tableau_decision_symbols.append(Symbol(original_name))
+            c_tableau.append(c_orig[i])
+        original_var_info_map.append(info)
 
-    A_eff = [[A_eff_cols[r][c] for c in range(len(decision_vars_transformed_symbols))] for r in range(num_constraints)]
-    b_eff_exprs = [S(val) for val in b_processed]
+    A_tableau_cols = []
+    for i in range(num_original_vars):
+        var_type = variable_types_orig[i].strip()
+        if var_type == '<=0':
+            A_tableau_cols.append([-A_orig[j][i] for j in range(m_orig)])
+        elif var_type == 'URS':
+            A_tableau_cols.append([A_orig[j][i] for j in range(m_orig)])
+            A_tableau_cols.append([-A_orig[j][i] for j in range(m_orig)])
+        else: # '>=0'
+            A_tableau_cols.append([A_orig[j][i] for j in range(m_orig)])
+    
+    # Transpose columns to get the final A_tableau matrix
+    A_tableau = [[A_tableau_cols[c][r] for c in range(len(A_tableau_cols))] for r in range(m_orig)]
 
-    combined_steps: Dict[str, Dict[str, Any]] = {}
+    # === BƯỚC 2: CHUYỂN RÀNG BUỘC VỀ DẠNG <= ===
+    A_le, b_le = [], []
+    for A_row_tableau, b_val, c_type in zip(A_tableau, b_orig, constraint_types_orig):
+        if c_type == '>=':
+            A_le.append([-c for c in A_row_tableau])
+            b_le.append(-b_val)
+        elif c_type == '=':
+            A_le.append(A_row_tableau)
+            b_le.append(b_val)
+            A_le.append([-c for c in A_row_tableau])
+            b_le.append(-b_val)
+        else: # '<='
+            A_le.append(A_row_tableau)
+            b_le.append(b_val)
+
+    # === BƯỚC 3: PHA 1 (PHASE 1) ===
     x0_sym = Symbol('x0')
     tableau_p1: Dict[str, Expr] = {}
-    basic_vars_p1_initial, non_basic_vars_p1_initial = [], [str(s) for s in decision_vars_transformed_symbols] + [str(x0_sym)]
-
-    for i in range(num_constraints):
-        w_name = f"w{i+1}"; w_sym = Symbol(w_name)
-        basic_vars_p1_initial.append(w_name)
-        sum_Ax_term_expr = sum(A_eff[i][k] * decision_vars_transformed_symbols[k] for k in range(len(decision_vars_transformed_symbols)))
-        if constraint_types_processed[i] == '>=':
-            tableau_p1[w_name] = simplify(x0_sym - b_eff_exprs[i] + sum_Ax_term_expr)
-        elif constraint_types_processed[i] == '<=':
-            tableau_p1[w_name] = simplify(x0_sym + b_eff_exprs[i] - sum_Ax_term_expr)
+    basic_vars_p1: List[str] = []
+    non_basic_vars_p1 = [str(s) for s in tableau_decision_symbols] + [str(x0_sym)]
     
-    S_sym = Symbol('S'); tableau_p1[str(S_sym)] = x0_sym
-    
-    min_const_in_wj, leaving_var_w_name_for_x0_pivot = S.Infinity, None
-    for w_name in basic_vars_p1_initial:
-        const_part = tableau_p1[w_name].subs(x0_sym, S.Zero).subs({s: S.Zero for s in decision_vars_transformed_symbols})
-        if const_part.is_Number and float(const_part.evalf()) < -SIMPLEX_TOLERANCE and const_part < min_const_in_wj:
-            min_const_in_wj, leaving_var_w_name_for_x0_pivot = const_part, w_name
+    # Tạo bảng Pha 1 ban đầu
+    for i in range(len(b_le)):
+        w_var = Symbol(f'w{i+1}')
+        lhs_expr = sum(S(A_le[i][j]) * tableau_decision_symbols[j] for j in range(len(tableau_decision_symbols)))
+        tableau_p1[str(w_var)] = S(b_le[i]) - lhs_expr + x0_sym # Thêm biến giả x0
+        basic_vars_p1.append(str(w_var))
 
-    tableau_p1_pre_pivoted, basic_vars_p1_pre_pivoted, non_basic_vars_p1_pre_pivoted = tableau_p1.copy(), basic_vars_p1_initial[:], non_basic_vars_p1_initial[:]
+    p1_obj_name = 'W'
+    tableau_p1[p1_obj_name] = x0_sym # Hàm mục tiêu W = x0 -> min W = min x0
     
-    if leaving_var_w_name_for_x0_pivot:
-        expr_for_x0 = Symbol(leaving_var_w_name_for_x0_pivot) - simplify(tableau_p1[leaving_var_w_name_for_x0_pivot].subs(x0_sym, S.Zero))
-        for var_name, expr in tableau_p1_pre_pivoted.items():
-            tableau_p1_pre_pivoted[var_name] = simplify(expr.subs(x0_sym, expr_for_x0))
-        basic_vars_p1_pre_pivoted.remove(leaving_var_w_name_for_x0_pivot); basic_vars_p1_pre_pivoted.append(str(x0_sym))
-        non_basic_vars_p1_pre_pivoted.remove(str(x0_sym)); non_basic_vars_p1_pre_pivoted.append(leaving_var_w_name_for_x0_pivot)
+    # Ghi lại bước 0 của pha 1
+    steps_p1 = {}
+    title_step0 = 'Phase 1 - Bước 0 (Bảng khởi tạo)'
+    original_var_names_sorted = sorted([info['original_name'] for info in original_var_info_map])
+    coords_step0 = _get_current_solution_values(tableau_p1, basic_vars_p1, non_basic_vars_p1, original_var_info_map)
+    steps_p1[title_step0] = {
+        'tableau': _get_ordered_tableau_for_history(tableau_p1, p1_obj_name),
+        'coords': [coords_step0.get(name, 0.0) for name in original_var_names_sorted]
+    }
 
-    status_p1, min_S_value, _, final_tableau_p1, \
-    final_basic_vars_p1, final_non_basic_vars_p1, steps_p1_from_core = _simplex_core_solver(
-        tableau_p1_pre_pivoted, basic_vars_p1_pre_pivoted, non_basic_vars_p1_pre_pivoted,
-        str(S_sym), "Phase 1", original_var_info_map
+    # Tìm biến ra để làm cho bảng khả thi (đưa x0 vào cơ sở)
+    const_terms = {bv: float(tableau_p1[bv].subs({Symbol(s): 0 for s in non_basic_vars_p1}).evalf()) for bv in basic_vars_p1}
+    # Biến ra là biến có hằng số âm nhất
+    leaving_var_p0 = min(const_terms, key=const_terms.get)
+
+    # Xoay pivot để đưa x0 (entering) vào cơ sở và leaving_var_p0 (leaving) ra
+    entering_sym = x0_sym
+    entering_str = str(entering_sym)
+    leaving_str = leaving_var_p0
+
+    pivot_row_expr = tableau_p1[leaving_str]
+    coeff_entering = pivot_row_expr.coeff(entering_sym) # Đây là hệ số của x0, phải là 1
+
+    # Biểu thức mới cho biến vào (x0)
+    expr_for_entering = simplify((Symbol(leaving_str) - (pivot_row_expr - coeff_entering * entering_sym)) / coeff_entering)
+
+    # Cập nhật bảng
+    new_tableau_p1 = {var: simplify(expr.subs(entering_sym, expr_for_entering)) for var, expr in tableau_p1.items() if var != leaving_str}
+    new_tableau_p1[entering_str] = expr_for_entering
+    tableau_p1 = new_tableau_p1
+        
+    # Cập nhật danh sách biến
+    basic_vars_p1.remove(leaving_str)
+    basic_vars_p1.append(entering_str)
+    non_basic_vars_p1.remove(entering_str)
+    non_basic_vars_p1.append(leaving_str)
+    
+    # Giải bài toán Pha 1
+    status_p1, w_min_val, final_tableau_p1, steps_p1_solver, final_basic_p1, final_non_basic_p1 = _simplex_core_solver(
+        tableau_p1, basic_vars_p1, non_basic_vars_p1, p1_obj_name, "Phase 1", original_var_info_map
     )
-    combined_steps.update(steps_p1_from_core)
+    steps_p1.update(steps_p1_solver)
 
-    if status_p1 != 'Optimal' or (min_S_value is not None and abs(min_S_value) > SIMPLEX_TOLERANCE):
-        return {'status': 'Vô nghiệm (Infeasible)', 'z': "N/A", 'solution': {}, 'steps': combined_steps, 'error_message': f"Pha 1 kết thúc với min S = {min_S_value}"}
+    # Kiểm tra kết quả Pha 1
+    if status_p1 != 'Optimal' or (w_min_val is not None and w_min_val > SIMPLEX_TOLERANCE):
+        z_infeasible = float('-inf') if is_max_problem else float('inf')
+        error_msg = f"Pha 1 kết thúc với x0_min = {w_min_val:.4f} > 0. Bài toán gốc vô nghiệm."
+        return {'status': status_map_vn['Infeasible'], 'z': str(z_infeasible), 'solution': {}, 'steps': steps_p1, 'error_message': error_msg}
 
+    # === BƯỚC 4: PHA 2 (PHASE 2) ===
+    # Chuẩn bị bảng cho Pha 2 từ kết quả Pha 1
     tableau_p2: Dict[str, Expr] = {}
-    basic_vars_p2 = [bv for bv in final_basic_vars_p1 if bv != str(S_sym) and bv != str(x0_sym)]
-    non_basic_vars_p2 = [nb for nb in final_non_basic_vars_p1 if nb != str(S_sym) and nb != str(x0_sym)]
 
-    for b_var in basic_vars_p2:
-        if b_var in final_tableau_p1:
-            tableau_p2[b_var] = simplify(final_tableau_p1[b_var].subs(x0_sym, S.Zero))
+    # Nếu x0 vẫn còn trong cơ sở với giá trị 0, ta cần xoay để loại nó ra
+    if str(x0_sym) in final_basic_p1:
+        # Tìm một biến không cơ sở khác x0 có hệ số khác 0 trong hàng x0 để xoay
+        x0_row_expr = final_tableau_p1[str(x0_sym)]
+        pivot_col_sym = None
+        for nb_var_str in final_non_basic_p1:
+            if abs(x0_row_expr.coeff(Symbol(nb_var_str))) > SIMPLEX_TOLERANCE:
+                pivot_col_sym = Symbol(nb_var_str)
+                break
+        
+        # Nếu tìm thấy, thực hiện xoay pivot
+        if pivot_col_sym:
+            pivot_col_str = str(pivot_col_sym)
+            coeff = x0_row_expr.coeff(pivot_col_sym)
+            expr_for_pivot_col = simplify((-(x0_row_expr - coeff * pivot_col_sym)) / coeff)
+            
+            for var, expr in final_tableau_p1.items():
+                if var != p1_obj_name and var != str(x0_sym):
+                    tableau_p2[var] = expr.subs(pivot_col_sym, expr_for_pivot_col)
+            
+            tableau_p2[pivot_col_str] = expr_for_pivot_col
 
-    is_max_problem = objective_type_orig.lower() == 'max'
-    z_original_expr = sum(c_eff_sympy_list[i] * decision_vars_transformed_symbols[i] for i in range(len(c_eff_sympy_list)))
-    z_expr_for_solver = -z_original_expr if is_max_problem else z_original_expr
+            final_basic_p1.remove(str(x0_sym))
+            final_basic_p1.append(pivot_col_str)
+            final_non_basic_p1.remove(pivot_col_str)
+            final_non_basic_p1.append(str(x0_sym))
+        # Nếu không tìm thấy (trường hợp hiếm, ràng buộc dư thừa), chỉ cần loại bỏ hàng x0
+        else:
+             final_basic_p1.remove(str(x0_sym))
+
+    # Loại bỏ biến giả x0 và hàm mục tiêu W
+    for var, expr in final_tableau_p1.items():
+        if var != p1_obj_name and var != str(x0_sym) and var not in tableau_p2:
+            tableau_p2[var] = expr.subs(x0_sym, 0)
+
+    basic_vars_p2 = [v for v in final_basic_p1 if v != str(x0_sym)]
+    non_basic_vars_p2 = [v for v in final_non_basic_p1 if v != str(x0_sym)]
     
-    subs_for_z = {Symbol(b_var): tableau_p2[b_var] for b_var in basic_vars_p2 if Symbol(b_var) in z_expr_for_solver.free_symbols and b_var in tableau_p2}
-    tableau_p2['z_obj'] = simplify(z_expr_for_solver.subs(subs_for_z))
+    # Xây dựng hàm mục tiêu cho Pha 2
+    p2_obj_name = 'z'
+    z_expr_orig = sum(S(c_tableau[i]) * tableau_decision_symbols[i] for i in range(len(c_tableau)))
+    
+    # Nếu là bài toán MAX, ta min(-Z)
+    z_expr_to_solve = -z_expr_orig if is_max_problem else z_expr_orig
+    
+    # Thế các biến cơ sở vào hàm mục tiêu
+    subs_dict_p2 = {Symbol(bv): tableau_p2[bv] for bv in basic_vars_p2 if Symbol(bv) in z_expr_to_solve.free_symbols and bv in tableau_p2}
+    tableau_p2[p2_obj_name] = simplify(z_expr_to_solve.subs(subs_dict_p2))
 
-    status_p2, z_solver_value, sol_exprs_p2, _, _, _, steps_p2_from_core = _simplex_core_solver(
-        tableau_p2, basic_vars_p2, non_basic_vars_p2,
-        'z_obj', "Phase 2", original_var_info_map
+    # Giải bài toán Pha 2
+    status_p2, z_min_value, final_tableau_p2, steps_p2, final_basic_p2, final_non_basic_p2 = _simplex_core_solver(
+        tableau_p2, basic_vars_p2, non_basic_vars_p2, p2_obj_name, "Phase 2", original_var_info_map
     )
-    combined_steps.update(steps_p2_from_core)
-
-    final_z_value: Union[float, str, None] = "N/A"
-    if z_solver_value is not None:
-        if status_p2 == 'Unbounded': final_z_value = float('inf') if is_max_problem else float('-inf')
-        elif status_p2 == 'Optimal': final_z_value = -z_solver_value if is_max_problem else z_solver_value
     
-    solution_final_orig_vars: Dict[str, Any] = {}
-    if status_p2 == 'Optimal' and sol_exprs_p2:
-        for var_info in original_var_info_map:
-            orig_name = var_info['original_name']
-            val_expr: Expr = S.Zero
-            if var_info['type'] == '>=0':
-                val_expr = sol_exprs_p2.get(var_info['transformed_name'], S.Zero)
-            elif var_info['type'] == '<=0':
-                val_expr = -sol_exprs_p2.get(var_info['transformed_name'], S.Zero)
-            elif var_info['type'] == 'URS':
-                p_val = sol_exprs_p2.get(var_info['p_name'], S.Zero)
-                n_val = sol_exprs_p2.get(var_info['n_name'], S.Zero)
-                val_expr = p_val - n_val
-            solution_final_orig_vars[orig_name] = format_expression_for_printing(val_expr)
-
-    status_map_vn = {'Optimal': 'Tối ưu (Optimal)', 'Unbounded': 'Không giới nội (Unbounded)', 'Infeasible': 'Vô nghiệm (Infeasible)', 'Error': 'Lỗi (Error)', 'MaxIterations': 'Đạt giới hạn vòng lặp (Max Iterations)'}
-    final_status = status_map_vn.get(status_p2, status_p2) if status_p1 == 'Optimal' and (min_S_value is None or abs(min_S_value) < SIMPLEX_TOLERANCE) else status_map_vn.get(status_p1, status_p1)
-
-    z_display = f"{final_z_value:.2f}" if isinstance(final_z_value, (float, int)) else str(final_z_value)
+    # === BƯỚC 5: XỬ LÝ KẾT QUẢ ===
+    combined_steps = steps_p1.copy()
+    combined_steps.update(steps_p2)
     
-    return {'status': final_status, 'z': z_display, 'solution': solution_final_orig_vars, 'steps': combined_steps, 'error_message': None}
+    final_z = "N/A"
+    if status_p2 == 'Optimal' and z_min_value is not None:
+        final_z = -z_min_value if is_max_problem else z_min_value
+    elif status_p2 == 'Unbounded':
+        final_z = float('inf') if is_max_problem else float('-inf')
+
+    solution_final = {}
+    if status_p2 == 'Optimal':
+        solution_final = _reconstruct_final_solution(final_tableau_p2, final_basic_p2, final_non_basic_p2, original_var_info_map)
+
+    return {
+        'status': status_map_vn.get(status_p2, status_p2), 
+        'z': f"{final_z:.2f}" if isinstance(final_z, (float, int)) else str(final_z),
+        'solution': solution_final, 
+        'steps': combined_steps, 
+        'error_message': None
+    }

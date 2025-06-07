@@ -315,16 +315,17 @@
 
                 {% if result_bland.error_message %} <p class="error-message">{{ result_bland.error_message }}</p> {% endif %}
 
-                {% if result_bland.steps and not result_bland.status.lower().startswith('vô nghiệm') and not result_bland.status.lower().startswith('lỗi') and result_bland.status != 'Không áp dụng (Not Applicable)' %}
+                {% if result_bland.steps and not result_bland.status.lower().startswith('lỗi') and result_bland.status != 'Không áp dụng (Not Applicable)' %}
                 <div class="mt-8"> <h3 class="optimal-solution-title" style="font-size: 1.3rem; margin-bottom: 0.5rem;">
                          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:22px; height:22px;">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                         </svg> Chi tiết các bước (Đơn hình Bland) </h3>
                     <div class="space-y-6">
-                        {% for title, tableau_list in result_bland.steps.items() %}
+                        {% for title, data in result_bland.steps.items() %}
                         <div class="step-details">
                             <h3 class="step-title" style="font-size: 1.15rem;">{{ title }}</h3>
                             <pre>
+{%- set tableau_list = data.tableau if data is mapping else data -%}
 {%- if tableau_list and tableau_list|length > 0 -%}
     {%- set first_var, first_expr = tableau_list[0] -%}
 <span class="tableau-objective-line">{{ "%-4s = %s"|format(first_var, first_expr) }}</span>{%- for i in range(1, tableau_list|length) -%}{%- set var, expr = tableau_list[i] -%}{{- "%-4s = %s"|format(var, expr) -}}{%- if not loop.last %}{{ "\n" }}{% endif -%}{%- endfor -%}
@@ -378,17 +379,19 @@
 
                 {% if result_two_phase.error_message %} <p class="error-message">{{ result_two_phase.error_message }}</p> {% endif %}
 
-                {% if result_two_phase.steps and not result_two_phase.status.lower().startswith('vô nghiệm') and not result_two_phase.status.lower().startswith('lỗi') %}
+                <!-- SỬA LỖI TẠI ĐÂY: Bỏ điều kiện "not result_two_phase.status.lower().startswith('vô nghiệm')" -->
+                {% if result_two_phase.steps and not result_two_phase.status.lower().startswith('lỗi') %}
                 <div class="mt-8">
                      <h3 class="optimal-solution-title" style="font-size: 1.3rem; margin-bottom: 0.5rem;">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:22px; height:22px;">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                         </svg> Chi tiết các bước (Đơn hình 2 Pha) </h3>
                     <div class="space-y-6">
-                        {% for title, tableau_list in result_two_phase.steps.items() -%}
+                        {% for title, data in result_two_phase.steps.items() -%}
                         <div class="step-details">
                             <h3 class="step-title" style="font-size: 1.15rem;">{{ title }}</h3>
                             <pre>
+{%- set tableau_list = data.tableau if data is mapping else data -%}
 {%- if tableau_list and tableau_list|length > 0 -%}
     {%- set first_var, first_expr = tableau_list[0] -%}
 <span class="tableau-objective-line">{{ "%-4s = %s"|format(first_var, first_expr) }}</span>{%- for i in range(1, tableau_list|length) -%}{%- set var, expr = tableau_list[i] -%}{{- "%-4s = %s"|format(var, expr) -}}{%- if not loop.last %}{{ "\n" }}{% endif -%}{%- endfor -%}

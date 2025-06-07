@@ -330,25 +330,16 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float],
         if is_degenerate:
             logger.info("Phát hiện suy biến.")
 
+        # ----- SỬA LỖI: HỢP NHẤT LOGIC CHỌN BIẾN VÀO -----
+        # Luôn sử dụng Quy tắc Bland để chọn biến vào một cách nhất quán để chống lặp.
         entering_var_name: Union[str, None] = None
-        if is_degenerate:
-            sorted_candidates = sorted(non_basic_var_names, key=get_bland_key)
-            for var_cand in sorted_candidates:
-                coeff = z_row_expr.coeff(Symbol(var_cand))
-                if isinstance(coeff, Number) and float(coeff.evalf()) < -SIMPLEX_TOLERANCE:
-                    entering_var_name = var_cand
-                    logger.info(f"Suy biến: Chọn biến vào {entering_var_name} theo Quy tắc Bland.")
-                    break
-        else:
-            most_negative_coeff = S.Zero + SIMPLEX_TOLERANCE
-            sorted_candidates = sorted(non_basic_var_names, key=get_bland_key)
-            for var_cand in sorted_candidates:
-                coeff = z_row_expr.coeff(Symbol(var_cand))
-                if isinstance(coeff, Number) and float(coeff.evalf()) < float(most_negative_coeff.evalf()):
-                    most_negative_coeff = coeff
-                    entering_var_name = var_cand
-            if entering_var_name:
-                 logger.info(f"Không suy biến: Chọn biến vào {entering_var_name} với hệ số {float(most_negative_coeff.evalf()):.4f}")
+        sorted_candidates = sorted(non_basic_var_names, key=get_bland_key)
+        for var_cand in sorted_candidates:
+            coeff = z_row_expr.coeff(Symbol(var_cand))
+            if isinstance(coeff, Number) and float(coeff.evalf()) < -SIMPLEX_TOLERANCE:
+                entering_var_name = var_cand
+                logger.info(f"Quy tắc Bland: Chọn biến vào {entering_var_name}.")
+                break  # Dừng ngay khi tìm thấy biến đầu tiên thỏa mãn
 
         if entering_var_name is None:
             status = 'Optimal'
@@ -373,6 +364,7 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float],
             status = 'Unbounded'
             break
 
+        # Chọn biến ra theo quy tắc Bland (chỉ số nhỏ nhất nếu có nhiều min_ratio bằng nhau)
         min_ratio = min(r for r, v in potential_leaving_vars_with_ratio)
         tied_candidates = [v for r, v in potential_leaving_vars_with_ratio if abs(r - min_ratio) < SIMPLEX_TOLERANCE]
         tied_candidates.sort(key=get_bland_key)
