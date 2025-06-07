@@ -225,16 +225,36 @@ def _reconstruct_final_solution(
         # --- 4. Cấu trúc lại dữ liệu trả về theo giao diện yêu cầu ---
         solution_list = []
         for var_name, expr in sorted(solution_expressions.items()):
-            expression_str = format_expression_for_printing(expr)
-            note = ""
+            # --- START: MODIFICATION ---
+            # Theo yêu cầu, khi có vô số nghiệm, không hiển thị điểm tối ưu cụ thể
+            # mà chỉ hiển thị dạng tham số.
+            const_part = expr.as_coeff_Add()[0]
+            var_part = expr - const_part
             
+            # Kiểm tra xem biến có phải là một tham số cơ sở không
+            is_base_parameter = expr.is_Symbol and str(expr) in parametric_vars
+            
+            if is_base_parameter:
+                # Nếu là tham số cơ sở (vd: w2), biểu thức chính là tên của nó
+                expression_str = format_expression_for_printing(expr)
+            else:
+                # Đối với các biến khác, chỉ hiển thị phần phụ thuộc tham số
+                expression_str = format_expression_for_printing(var_part)
+
+            # Nếu việc bỏ phần hằng số làm biểu thức = 0, nhưng giá trị ban đầu khác 0,
+            # điều đó có nghĩa là biến này có giá trị không đổi trong tập nghiệm.
+            # Ta cần hiển thị giá trị hằng số đó để tránh mất thông tin.
+            if expression_str == "0.00" and not is_base_parameter:
+                expression_str = format_expression_for_printing(const_part)
+            # --- END: MODIFICATION ---
+
+            note = ""
             params_in_expr = [p for p in parametric_vars if Symbol(p) in expr.free_symbols]
 
             if params_in_expr:
                 specific_conditions = sorted([param_condition_strings.get(p, f"{p} >= 0") for p in params_in_expr])
                 conditions_str = ", ".join(specific_conditions)
 
-                is_base_parameter = expr.is_Symbol and str(expr) in parametric_vars
                 if is_base_parameter:
                     note = f"(tham số, {conditions_str})"
                 else:
@@ -321,15 +341,36 @@ def _simplex_core_solver(
             # TỐI ƯU hoặc VÔ SỐ NGHIỆM TỐI ƯU
             obj_val = float(obj_row_expr.as_coeff_Add()[0].evalf(chop=True))
             
-            parametric_vars = []
+            potential_parametric_vars = []
             for nb_var_str in non_basic_vars:
-                if 'x0' in nb_var_str or str(nb_var_str).startswith('a'): continue # Bỏ qua biến giả
+                # Bỏ qua biến giả trong việc xét nghiệm vô số
+                if 'x0' in nb_var_str or str(nb_var_str).startswith('a'): continue
                 coeff = obj_row_expr.coeff(Symbol(nb_var_str))
                 if coeff.is_Number and abs(float(coeff.evalf())) < SIMPLEX_TOLERANCE:
-                    parametric_vars.append(nb_var_str)
+                    potential_parametric_vars.append(nb_var_str)
 
-            status = 'MultipleOptimal' if parametric_vars else 'Optimal'
-            return status, obj_val, tableau, steps_history, basic_vars, non_basic_vars, {'parametric_vars': parametric_vars}
+            # --- START: ĐIỀU CHỈNH LOGIC THEO YÊU CẦU ---
+            # Lọc ra các biến thực sự dẫn đến vô số nghiệm.
+            # Bỏ qua trường hợp một biến URS (vd: x_p) là biến cơ sở và biến phụ tương ứng (vd: x_n)
+            # là biến phi cơ sở có hệ số 0 trong hàng z. Trường hợp này sẽ được coi là nghiệm duy nhất.
+            final_parametric_vars = []
+            for var_str in potential_parametric_vars:
+                is_urs_component = False
+                if var_str.endswith('_p'):
+                    counterpart = var_str[:-2] + '_n'
+                    if counterpart in basic_vars:
+                        is_urs_component = True
+                elif var_str.endswith('_n'):
+                    counterpart = var_str[:-2] + '_p'
+                    if counterpart in basic_vars:
+                        is_urs_component = True
+                
+                if not is_urs_component:
+                    final_parametric_vars.append(var_str)
+            # --- END: ĐIỀU CHỈNH LOGIC ---
+
+            status = 'MultipleOptimal' if final_parametric_vars else 'Optimal'
+            return status, obj_val, tableau, steps_history, basic_vars, non_basic_vars, {'parametric_vars': final_parametric_vars}
 
         # === 2. CHỌN BIẾN RA (LEAVING VARIABLE) ===
         potential_leaving = []

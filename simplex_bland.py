@@ -225,11 +225,41 @@ def _reconstruct_final_solution_bland(
                 elif Symbol(t_name) in params_sym: expr = -Symbol(t_name)
             elif info.get('is_urs', False):
                 pos_name, neg_name = info['pos_name'], info['neg_name']
-                pos_expr = final_tableau[pos_name] if pos_name in final_basic_vars else (Symbol(pos_name) if pos_name in parametric_vars else S.Zero)
-                neg_expr = final_tableau[neg_name] if neg_name in final_basic_vars else (Symbol(neg_name) if neg_name in parametric_vars else S.Zero)
+                pos_expr = final_tableau.get(pos_name, S.Zero) if pos_name in final_basic_vars else (Symbol(pos_name) if pos_name in parametric_vars else S.Zero)
+                neg_expr = final_tableau.get(neg_name, S.Zero) if neg_name in final_basic_vars else (Symbol(neg_name) if neg_name in parametric_vars else S.Zero)
                 expr = pos_expr - neg_expr
             solution_expressions[original_name] = simplify(expr.subs(subs_dict))
 
+        # --- LOGIC MỚI: Kiểm tra xem nghiệm của các biến GỐC có thực sự phụ thuộc vào tham số không ---
+        solution_is_effectively_unique = True
+        for expr in solution_expressions.values():
+            # Kiểm tra xem có ký hiệu tham số nào trong các ký hiệu tự do của biểu thức không
+            if not expr.free_symbols.isdisjoint(params_sym):
+                solution_is_effectively_unique = False
+                break
+        
+        if solution_is_effectively_unique:
+            logger.info("Phát hiện trường hợp 'Vô số nghiệm', nhưng nghiệm cho các biến gốc là duy nhất.")
+            # Nếu không có biến gốc nào phụ thuộc vào tham số, coi như đây là nghiệm điểm duy nhất.
+            numeric_solution = _get_current_solution_values(final_tableau, final_basic_vars, final_non_basic_vars, original_var_info_map)
+            solution_formatted = {name: f"{value:.2f}" if abs(value) > SIMPLEX_TOLERANCE else "0.00" for name, value in numeric_solution.items()}
+            
+            solution_list = []
+            for name, value in sorted(solution_formatted.items()):
+                solution_list.append({
+                    "variable": name,
+                    "expression": value,
+                    "note": ""
+                })
+
+            return {
+                "type": "point", 
+                "solution": solution_list,
+                "status_override": "Optimal_Unique_On_Originals" # Gửi tín hiệu để ghi đè trạng thái
+            }
+        # --- KẾT THÚC LOGIC MỚI ---
+
+        # --- Tiếp tục logic cũ cho nghiệm tham số nếu không phải là duy nhất hiệu quả ---
         # --- 2. Tìm và ánh xạ điều kiện cho từng tham số ---
         param_conditions_map = {}
         vars_to_check_non_negativity = final_basic_vars + parametric_vars
@@ -537,7 +567,6 @@ def auto_simplex(
     2. Tất cả hằng số vế phải (b_i) là không âm.
     """
     
-    # --- BẮT ĐẦU: TIỀN XỬ LÝ VÀ CHUYỂN ĐỔI VỀ DẠNG CHUẨN TẮC ---
     A_processed = [row[:] for row in A]
     b_processed = b[:]
     constraint_types_processed = constraint_types[:]
@@ -550,9 +579,7 @@ def auto_simplex(
             A_processed[i] = [-coeff for coeff in A_processed[i]]
             b_processed[i] = -b_processed[i]
             constraint_types_processed[i] = '<='
-    # --- KẾT THÚC: TIỀN XỬ LÝ ---
 
-    # --- BẮT ĐẦU: KIỂM TRA DẠNG CHUẨN TẮC SAU KHI ĐÃ XỬ LÝ ---
     is_not_standard = False
     for i, ct in enumerate(constraint_types_processed):
         if ct.strip() != '<=':
@@ -577,7 +604,6 @@ def auto_simplex(
             'error_message': error_msg,
             'parameter_conditions': ""
         }
-    # --- KẾT THÚC: KIỂM TRA DẠNG CHUẨN ---
 
     num_vars_orig = len(c)
     if variable_types is None:
@@ -602,7 +628,6 @@ def auto_simplex(
         c_effective = [-ci for ci in c_effective]
 
     try:
-        # Gọi hàm giải Simplex với các dữ liệu đã được xử lý
         status_solver, z_star_from_solver, structured_solution, steps_history_raw, _ = _simplex_min(
             A_processed, b_processed, c_effective, 
             constraint_types_processed,
@@ -639,9 +664,22 @@ def auto_simplex(
             z_final_display = -z_star_from_solver if is_maximization else z_star_from_solver
     elif status_solver == 'Unbounded':
         z_final_display = float('inf') if is_maximization else float('-inf')
+    
+    # Ánh xạ trạng thái sang tiếng Việt và xử lý trường hợp ghi đè
+    status_map_vn = {
+        'Optimal': 'Tối ưu (Optimal)', 
+        'Multiple': 'Vô số nghiệm', 
+        'Unbounded': 'Không giới nội', 
+        'Error': 'Lỗi',
+        'Optimal_Unique_On_Originals': 'Tối ưu (Nghiệm duy nhất trên biến gốc)' # Trạng thái mới
+    }
+    
+    # Ghi đè trạng thái nếu hàm con trả về tín hiệu
+    final_status_key = status_solver
+    if isinstance(structured_solution, dict) and structured_solution.get('status_override'):
+        final_status_key = structured_solution.get('status_override')
 
-    status_map_vn = {'Optimal': 'Tối ưu (Optimal)', 'Multiple': 'Vô số nghiệm', 'Unbounded': 'Không giới nội', 'Error': 'Lỗi'}
-    final_status = status_map_vn.get(status_solver, status_solver)
+    final_status = status_map_vn.get(final_status_key, final_status_key)
 
     return {
         'status': final_status,
