@@ -1,6 +1,6 @@
 import logging
 from typing import List, Dict, Tuple, Any, Union
-from sympy import simplify, solve, Symbol, S, sympify, Add, Mul, Number
+from sympy import simplify, solve, Symbol, S, sympify, Add, Mul, Number, Expr
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -11,101 +11,74 @@ SIMPLEX_TOLERANCE = 1e-9
 
 def format_expression_for_printing(expression):
     """Định dạng biểu thức SymPy để in, làm tròn và sắp xếp các số hạng."""
-    if not isinstance(expression, (Add, Mul, Symbol, Number)):
+    if not isinstance(expression, (Add, Mul, Symbol, Number, Expr)):
         try:
             expression = sympify(expression)
-        except (SyntaxError, TypeError):
+        except (SyntaxError, TypeError, AttributeError):
             return str(expression)
 
     expression = simplify(expression)
-    
-    if not expression.free_symbols:
-        try:
-            if isinstance(expression, Number):
-                 num_val = float(expression.evalf(chop=True)) 
-                 return f"{round(num_val, 10):.2f}" 
-            else: 
-                 return str(expression)
-        except (TypeError, ValueError): 
-             return str(expression)
 
-    const_term = expression.as_coeff_Add()[0] 
-    var_terms_expr = expression - const_term 
-    
+    if expression.is_Number:
+        try:
+            num_val = float(expression.evalf(chop=True))
+            if abs(num_val) < SIMPLEX_TOLERANCE / 100: return "0.00"
+            return f"{num_val:.2f}"
+        except (TypeError, ValueError): return str(expression)
+
+    const_term = expression.as_coeff_Add()[0]
+    var_terms_expr = expression - const_term
+
     try:
         const_val = float(const_term.evalf(chop=True))
-        const_str = f"{round(const_val, 10):.2f}" if const_val != 0 else "0.00"
-    except TypeError:
-        const_str = str(const_term) 
+        const_str = "0.00" if abs(const_val) < SIMPLEX_TOLERANCE / 100 else f"{const_val:.2f}"
+    except (TypeError, ValueError): const_str = str(const_term)
 
-    if var_terms_expr == 0: 
-        return const_str
+    if var_terms_expr == S.Zero: return const_str
 
-    var_term_dict = {}
+    var_term_dict: Dict[Symbol, Any] = {}
     terms_to_process = var_terms_expr.as_ordered_terms() if isinstance(var_terms_expr, Add) else [var_terms_expr]
 
     for term in terms_to_process:
-        coeff, var_part = term.as_coeff_Mul() 
-        var_str = str(var_part) if var_part != 1 else "" 
-        if var_str: 
-            var_term_dict[var_str] = var_term_dict.get(var_str, S.Zero) + coeff
+        coeff, var_part = term.as_coeff_Mul()
+        var_sym: Union[Symbol, None] = None
+        if var_part.is_Symbol:
+            var_sym = var_part
+        elif len(term.free_symbols) == 1:
+            var_sym = list(term.free_symbols)[0]
+            coeff = term.coeff(var_sym)
+        else:
+            continue
             
-    sorted_vars = sorted(var_term_dict.keys(), key=lambda x_key: (
-        0 if x_key.startswith('x') and not (x_key.endswith('_p') or x_key.endswith('_n')) else
-        1 if x_key.startswith('y') and not (x_key.endswith('_p') or x_key.endswith('_n')) else
-        2 if x_key.startswith('w') else
-        3 if x_key.endswith('_p') or x_key.endswith('_n') else 
-        4, x_key
-    ))
+        if var_sym is not None: var_term_dict[var_sym] = var_term_dict.get(var_sym, S.Zero) + coeff
 
+    sorted_var_symbols = sorted(var_term_dict.keys(), key=lambda s: get_bland_key(str(s)))
+    
     var_str_list = []
-    for var_key in sorted_vars:
-        coeff = var_term_dict[var_key]
+    for var_sym in sorted_var_symbols:
+        coeff = var_term_dict[var_sym]
         try:
             coeff_val = float(coeff.evalf(chop=True))
-            coeff_rounded = round(coeff_val, 2) 
-        except TypeError: 
-            if coeff == 1: coeff_rounded = 1.0
-            elif coeff == -1: coeff_rounded = -1.0
-            else: 
-                sign_char = ""
-                if hasattr(coeff, 'is_negative') and coeff.is_negative: sign_char = "-"
-                elif hasattr(coeff, 'is_positive') and coeff.is_positive: sign_char = "+"
-                
-                term_str_sym = f"{var_key}" if abs(coeff) == 1 else f"{abs(coeff)}*{var_key}"
-                var_str_list.append((sign_char, term_str_sym, not (hasattr(coeff, 'is_negative') and coeff.is_negative)))
-                continue
+            if abs(coeff_val) < SIMPLEX_TOLERANCE / 100: continue
+            sign = "+ " if coeff_val > 0 else "- "
+            abs_coeff_val = abs(coeff_val)
+            term_str_val_part = str(var_sym) if abs(abs_coeff_val - 1.0) < SIMPLEX_TOLERANCE else f"{abs_coeff_val:.2f}*{var_sym}"
+            var_str_list.append((sign, term_str_val_part))
+        except (TypeError, ValueError):
+            sign_str = "+ " if not coeff.is_negative else "- "
+            abs_coeff = abs(coeff)
+            term_str_val_part = str(var_sym) if abs_coeff == 1 else f"{abs_coeff}*{var_sym}"
+            var_str_list.append((sign_str, term_str_val_part))
 
-        if abs(coeff_rounded) < SIMPLEX_TOLERANCE / 100: 
-            continue
-        
-        sign = "+" if coeff_rounded > 0 else "-"
-        abs_coeff_display = abs(coeff_rounded)
-
-        if abs(abs_coeff_display - 1.0) < SIMPLEX_TOLERANCE and var_key: 
-            term_str = f"{var_key}"
-        else:
-            term_str = f"{abs_coeff_display:.2f}*{var_key}"
-        
-        var_str_list.append((sign, term_str, coeff_rounded > 0))
-
-    if not var_str_list: 
-        return const_str
-
-    result_str = ""
-    if const_str != "0.00" or not var_str_list:
-        result_str = const_str
+    if not var_str_list: return const_str
     
-    for i, (sign, term_s, is_positive) in enumerate(var_str_list):
-        if result_str and result_str != "0.00" : 
-            result_str += f" {sign} {term_s}"
-        elif result_str == "0.00": 
-            result_str = f"{sign} {term_s}".strip() 
-            if result_str.startswith("+"): result_str = result_str[1:].strip()
-        elif not result_str: 
-            result_str = f"{sign} {term_s}".strip()
-            if result_str.startswith("+"): result_str = result_str[1:].strip()
-
+    result_str = const_str if const_str != "0.00" else ""
+    for i, (sign, term_s) in enumerate(var_str_list):
+        if result_str:
+            result_str += f" {sign}{term_s}"
+        else:
+            result_str = term_s if sign == "+ " else f"-{term_s}"
+            
     return result_str if result_str else "0.00"
 
 def _print_tableau(title: str, exprs: Dict[str, Any], basic_vars: List[str] = None, non_basic_vars: List[str] = None) -> None:
@@ -222,6 +195,135 @@ def _get_current_solution_values(
             
     return solution_values_numeric
 
+def _reconstruct_final_solution_bland(
+    final_tableau: Dict[str, Any], 
+    final_basic_vars: List[str], 
+    final_non_basic_vars: List[str],
+    original_var_info_map: List[Dict[str, Any]],
+    status: str,
+    parametric_vars: List[str]
+) -> Dict[str, Any]:
+    """
+    Từ bảng cuối cùng, tính toán và định dạng giá trị nghiệm cho các biến GỐC.
+    Xử lý trường hợp nghiệm duy nhất và vô số nghiệm (tham số).
+    """
+    if status == 'Multiple' and parametric_vars:
+        # --- 1. Tính biểu thức nghiệm ---
+        params_sym = {Symbol(p) for p in parametric_vars}
+        subs_dict = {Symbol(nb): 0 for nb in final_non_basic_vars if Symbol(nb) not in params_sym}
+        solution_expressions = {}
+        for info in original_var_info_map:
+            original_name = info['original_name']
+            expr = S.Zero
+            if info.get('is_standard', False):
+                t_name = info['tableau_name']
+                if t_name in final_basic_vars: expr = final_tableau[t_name]
+                elif Symbol(t_name) in params_sym: expr = Symbol(t_name)
+            elif info.get('is_transformed_neg', False):
+                t_name = info['tableau_name']
+                if t_name in final_basic_vars: expr = -final_tableau[t_name]
+                elif Symbol(t_name) in params_sym: expr = -Symbol(t_name)
+            elif info.get('is_urs', False):
+                pos_name, neg_name = info['pos_name'], info['neg_name']
+                pos_expr = final_tableau[pos_name] if pos_name in final_basic_vars else (Symbol(pos_name) if pos_name in parametric_vars else S.Zero)
+                neg_expr = final_tableau[neg_name] if neg_name in final_basic_vars else (Symbol(neg_name) if neg_name in parametric_vars else S.Zero)
+                expr = pos_expr - neg_expr
+            solution_expressions[original_name] = simplify(expr.subs(subs_dict))
+
+        # --- 2. Tìm và ánh xạ điều kiện cho từng tham số ---
+        param_conditions_map = {}
+        vars_to_check_non_negativity = final_basic_vars + parametric_vars
+        
+        for p in parametric_vars:
+            param_conditions_map[p] = {'lower': S.Zero, 'upper': S.Infinity}
+
+        for var_str in vars_to_check_non_negativity:
+            if var_str in final_basic_vars:
+                expr = final_tableau[var_str].subs(subs_dict)
+            else: # Đây là một biến tham số
+                expr = Symbol(var_str)
+            expr_params = [p for p in parametric_vars if Symbol(p) in expr.free_symbols]
+
+            if len(expr_params) == 1:
+                param_str = expr_params[0]
+                param_sym = Symbol(param_str)
+                const_term = expr.subs(param_sym, 0)
+                coeff = expr.coeff(param_sym)
+                if abs(float(coeff.evalf())) > SIMPLEX_TOLERANCE:
+                    bound = simplify(-const_term / coeff)
+                    if float(coeff.evalf()) > 0: # >= 0 constraint (e.g., c + k*p >= 0 => p >= -c/k)
+                        current_lower = param_conditions_map[param_str]['lower']
+                        if bound.is_Number and (current_lower is S.NegativeInfinity or bound > current_lower):
+                            param_conditions_map[param_str]['lower'] = bound
+                    else: # <= 0 constraint (e.g., c - k*p >= 0 => p <= c/k)
+                        current_upper = param_conditions_map[param_str]['upper']
+                        if bound.is_Number and (current_upper is S.Infinity or bound < current_upper):
+                            param_conditions_map[param_str]['upper'] = bound
+        
+        # --- 3. Định dạng chuỗi điều kiện cho từng tham số ---
+        param_condition_strings = {}
+        for p_str, bounds in param_conditions_map.items():
+            lower_bound_expr = simplify(bounds['lower'])
+            upper_bound_expr = simplify(bounds['upper'])
+            lower_val = float(lower_bound_expr.evalf()) if lower_bound_expr.is_Number else -float('inf')
+            upper_val = float(upper_bound_expr.evalf()) if upper_bound_expr.is_Number else float('inf')
+
+            if lower_val > upper_val + SIMPLEX_TOLERANCE:
+                param_condition_strings[p_str] = f"Mâu thuẫn"
+                continue
+            
+            lower_str = format_expression_for_printing(lower_bound_expr)
+            upper_str = format_expression_for_printing(upper_bound_expr)
+            
+            if lower_str == "0.00" and upper_val == float('inf'):
+                param_condition_strings[p_str] = f"{p_str} >= 0"
+            elif upper_val != float('inf'):
+                param_condition_strings[p_str] = f"{lower_str} <= {p_str} <= {upper_str}"
+            else:
+                param_condition_strings[p_str] = f"{p_str} >= {lower_str}"
+        
+        # --- 4. Cấu trúc lại dữ liệu trả về theo giao diện yêu cầu ---
+        solution_list = []
+        for var_name, expr in sorted(solution_expressions.items()):
+            expression_str = format_expression_for_printing(expr)
+            note = ""
+            
+            params_in_expr = [p for p in parametric_vars if Symbol(p) in expr.free_symbols]
+
+            if params_in_expr:
+                specific_conditions = sorted([param_condition_strings.get(p, f"{p} >= 0") for p in params_in_expr])
+                conditions_str = ", ".join(specific_conditions)
+
+                is_base_parameter = expr.is_Symbol and str(expr) in parametric_vars
+                if is_base_parameter:
+                    note = f"(tham số, {conditions_str})"
+                else:
+                    note = f"(phụ thuộc tham số, {conditions_str})"
+            
+            solution_list.append({
+                "variable": var_name,
+                "expression": expression_str,
+                "note": note,
+            })
+
+        return {
+            "type": "parametric", 
+            "solution": solution_list,
+        }
+
+    else: # 'Optimal' - Nghiệm duy nhất
+        numeric_solution = _get_current_solution_values(final_tableau, final_basic_vars, final_non_basic_vars, original_var_info_map)
+        solution_formatted = {name: f"{value:.2f}" if abs(value) > SIMPLEX_TOLERANCE else "0.00" for name, value in numeric_solution.items()}
+        
+        solution_list = []
+        for name, value in sorted(solution_formatted.items()):
+            solution_list.append({
+                "variable": name,
+                "expression": value,
+                "note": ""
+            })
+        return {"type": "point", "solution": solution_list}
+
 def _simplex_min(A: List[List[float]], b: List[float], c: List[float], 
                  constraint_types: List[str], variable_types: List[str], 
                  objective_type: str, original_var_info_map_outer: List[Dict[str, Any]]) -> Tuple[str, Union[float, None], Dict[str, Any], Dict[str, Dict[str, Any]], List[str]]:
@@ -330,8 +432,6 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float],
         if is_degenerate:
             logger.info("Phát hiện suy biến.")
 
-        # ----- SỬA LỖI: HỢP NHẤT LOGIC CHỌN BIẾN VÀO -----
-        # Luôn sử dụng Quy tắc Bland để chọn biến vào một cách nhất quán để chống lặp.
         entering_var_name: Union[str, None] = None
         sorted_candidates = sorted(non_basic_var_names, key=get_bland_key)
         for var_cand in sorted_candidates:
@@ -339,10 +439,16 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float],
             if isinstance(coeff, Number) and float(coeff.evalf()) < -SIMPLEX_TOLERANCE:
                 entering_var_name = var_cand
                 logger.info(f"Quy tắc Bland: Chọn biến vào {entering_var_name}.")
-                break  # Dừng ngay khi tìm thấy biến đầu tiên thỏa mãn
+                break
 
         if entering_var_name is None:
-            status = 'Optimal'
+            z_row_expr = current_tableau['z']
+            for var_cand in non_basic_var_names:
+                coeff = z_row_expr.coeff(Symbol(var_cand))
+                if isinstance(coeff, Number) and abs(float(coeff.evalf())) < SIMPLEX_TOLERANCE:
+                    parameter_names_for_multiple_optima.append(var_cand)
+            
+            status = 'Multiple' if parameter_names_for_multiple_optima else 'Optimal'
             logger.info(f"Trạng thái cuối cùng: {status}")
             break
 
@@ -364,7 +470,6 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float],
             status = 'Unbounded'
             break
 
-        # Chọn biến ra theo quy tắc Bland (chỉ số nhỏ nhất nếu có nhiều min_ratio bằng nhau)
         min_ratio = min(r for r, v in potential_leaving_vars_with_ratio)
         tied_candidates = [v for r, v in potential_leaving_vars_with_ratio if abs(r - min_ratio) < SIMPLEX_TOLERANCE]
         tied_candidates.sort(key=get_bland_key)
@@ -406,11 +511,14 @@ def _simplex_min(A: List[List[float]], b: List[float], c: List[float],
         if not z_final_expr_subbed.free_symbols:
             z_star_value = float(z_final_expr_subbed.evalf(chop=True))
 
-        for info in original_var_info_map_outer:
-            solution_values[info['original_name']] = _get_current_solution_values(current_tableau, basic_var_names, non_basic_var_names, [info]).get(info['original_name'], S.Zero)
+        solution_values = _reconstruct_final_solution_bland(
+            current_tableau, basic_var_names, non_basic_var_names,
+            original_var_info_map_outer, status, parameter_names_for_multiple_optima
+        )
 
     elif status == 'Unbounded':
         z_star_value = float('-inf')
+        solution_values = {}
 
     return status, z_star_value, solution_values, steps_history, parameter_names_for_multiple_optima
 
@@ -422,25 +530,45 @@ def auto_simplex(
     objective_type: str = 'max',
     variable_types: List[str] | None = None, 
 ) -> Dict[str, Any]:
-    """Hàm chính, kiểm tra dạng chuẩn trước khi giải."""
+    """
+    Hàm chính, tự động kiểm tra và chuyển đổi bài toán về dạng chuẩn tắc trước khi giải.
+    Dạng chuẩn tắc yêu cầu:
+    1. Tất cả ràng buộc là dạng '<='.
+    2. Tất cả hằng số vế phải (b_i) là không âm.
+    """
     
-    # --- BẮT ĐẦU: KIỂM TRA DẠNG CHUẨN TRƯỚC KHI GIẢI ---
+    # --- BẮT ĐẦU: TIỀN XỬ LÝ VÀ CHUYỂN ĐỔI VỀ DẠNG CHUẨN TẮC ---
+    A_processed = [row[:] for row in A]
+    b_processed = b[:]
+    constraint_types_processed = constraint_types[:]
+    
+    logger.info("Bắt đầu tiền xử lý các ràng buộc để đưa về dạng chuẩn tắc ('<=' với vế phải không âm).")
+    
+    for i in range(len(constraint_types_processed)):
+        if constraint_types_processed[i].strip() == '>=':
+            logger.info(f"Chuyển đổi ràng buộc #{i+1} (dạng '>='): Nhân hai vế với -1.")
+            A_processed[i] = [-coeff for coeff in A_processed[i]]
+            b_processed[i] = -b_processed[i]
+            constraint_types_processed[i] = '<='
+    # --- KẾT THÚC: TIỀN XỬ LÝ ---
+
+    # --- BẮT ĐẦU: KIỂM TRA DẠNG CHUẨN TẮC SAU KHI ĐÃ XỬ LÝ ---
     is_not_standard = False
-    for i, ct in enumerate(constraint_types):
+    for i, ct in enumerate(constraint_types_processed):
         if ct.strip() != '<=':
             is_not_standard = True
-            logger.warning(f"Phát hiện ràng buộc #{i+1} dạng '{ct}'. Đơn hình chuẩn yêu cầu dạng '<='.")
+            logger.warning(f"Sau khi chuyển đổi, ràng buộc #{i+1} vẫn ở dạng '{ct}', không phải '<='. Cần phương pháp Hai Pha.")
             break
             
     if not is_not_standard:
-        for i, val in enumerate(b):
+        for i, val in enumerate(b_processed):
             if val < 0:
                 is_not_standard = True
-                logger.warning(f"Phát hiện vế phải âm ({val}) ở ràng buộc #{i+1}. Đơn hình chuẩn yêu cầu vế phải không âm.")
+                logger.warning(f"Sau khi chuyển đổi, vế phải của ràng buộc #{i+1} vẫn âm ({val}). Cần phương pháp Hai Pha.")
                 break
 
     if is_not_standard:
-        error_msg = ("Bài toán này không thể giải bằng đơn hình chuẩn vì không ở dạng chính tắc (yêu cầu tất cả ràng buộc là '<=' và vế phải không âm). Vui lòng chọn thuật toán Đơn hình Hai Pha để giải.")
+        error_msg = ("Bài toán này không thể giải bằng đơn hình chuẩn vì sau khi biến đổi vẫn không ở dạng chính tắc (yêu cầu tất cả ràng buộc là '<=' và vế phải không âm). Vui lòng sử dụng phương pháp Đơn hình Hai Pha hoặc Đối ngẫu.")
         return {
             'status': 'Cần dùng phương pháp Hai Pha',
             'z': "N/A",
@@ -455,7 +583,6 @@ def auto_simplex(
     if variable_types is None:
         variable_types = ['>=0'] * num_vars_orig 
 
-    # Tạo map thông tin biến gốc để truyền vào _simplex_min
     original_var_info_map_for_coords = []
     for i in range(num_vars_orig):
         original_name = f"x{i+1}" 
@@ -475,9 +602,10 @@ def auto_simplex(
         c_effective = [-ci for ci in c_effective]
 
     try:
-        status_solver, z_star_from_solver, sol_vals_sympy_from_solver, steps_history_raw, _ = _simplex_min(
-            A, b, c_effective, 
-            constraint_types,
+        # Gọi hàm giải Simplex với các dữ liệu đã được xử lý
+        status_solver, z_star_from_solver, structured_solution, steps_history_raw, _ = _simplex_min(
+            A_processed, b_processed, c_effective, 
+            constraint_types_processed,
             variable_types, 
             "min",
             original_var_info_map_for_coords
@@ -492,7 +620,6 @@ def auto_simplex(
         coords = step_data_dict.get('coords')
         
         ordered_tableau_list = []
-        # Logic sắp xếp và định dạng bảng...
         all_vars_in_step = sorted(list(tableau_sympy.keys()), key=get_bland_key)
         if 'z' in all_vars_in_step:
             all_vars_in_step.insert(0, all_vars_in_step.pop(all_vars_in_step.index('z')))
@@ -513,17 +640,13 @@ def auto_simplex(
     elif status_solver == 'Unbounded':
         z_final_display = float('inf') if is_maximization else float('-inf')
 
-    solution_output_formatted: Dict[str, str] = {
-        var: format_expression_for_printing(val) for var, val in sol_vals_sympy_from_solver.items()
-    }
-
     status_map_vn = {'Optimal': 'Tối ưu (Optimal)', 'Multiple': 'Vô số nghiệm', 'Unbounded': 'Không giới nội', 'Error': 'Lỗi'}
     final_status = status_map_vn.get(status_solver, status_solver)
 
     return {
         'status': final_status,
         'z': f"{z_final_display:.2f}" if isinstance(z_final_display, float) else str(z_final_display),
-        'solution': solution_output_formatted, 
+        'solution': structured_solution, 
         'steps': formatted_steps_output,
         'error_message': None,
         'parameter_conditions': ""

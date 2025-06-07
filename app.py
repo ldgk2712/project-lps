@@ -131,95 +131,52 @@ def solve():
             return render_template('index.html', **error_context)
         # --- (Kết thúc phần parsing) ---
 
-        result_bland = None
-        result_two_phase = None
-
-        has_negative_b = any(b < -APP_TOLERANCE for b in b_vector)
-
-        if has_negative_b:
-            app.logger.info("Phát hiện có b_i < 0. Chỉ giải bằng phương pháp 2 Pha.")
-            result_two_phase = simplex_two_phase(
-                A_orig=A_matrix, b_orig=b_vector, c_orig=c_coeffs,
-                constraint_types_orig=constraint_types_list,
-                objective_type_orig=objective_str,
-                variable_types_orig=variable_types_list
+        app.logger.info("Giải bằng phương pháp Đơn hình (Quy tắc Bland)...")
+        try:
+            result_bland = auto_simplex(
+                A_matrix, b_vector, c_coeffs, constraint_types_list,
+                objective_str, variable_types_list
             )
-            app.logger.info(f"Kết quả Đơn hình 2 Pha: {result_two_phase.get('status')}")
+            app.logger.info(f"Kết quả Đơn hình (Bland): {result_bland.get('status')}")
+        except Exception as e_bland:
+            app.logger.error(f"Lỗi khi chạy auto_simplex (Bland): {e_bland}", exc_info=True)
             result_bland = {
-                'status': 'Không áp dụng (Not Applicable)', 'z': "N/A", 'solution': {}, 'steps': {},
-                'error_message': "Phương pháp Đơn hình (Bland) này không được áp dụng trực tiếp vì có ít nhất một hằng số vế phải (bᵢ) âm.",
+                'status': 'Lỗi (Error)', 'z': "N/A", 'solution': {}, 'steps': {},
+                'error_message': f"Lỗi khi thực thi Đơn hình Bland: {str(e_bland)}",
                 'parameter_conditions': ""
             }
-        else:
-            app.logger.info("Tất cả b_i >= 0. Giải bằng Đơn hình (Bland) trước, sau đó là 2 Pha.")
-            try:
-                result_bland = auto_simplex(
-                    A_matrix, b_vector, c_coeffs, constraint_types_list,
-                    objective_str, variable_types_list
-                )
-                app.logger.info(f"Kết quả Đơn hình (Bland): {result_bland.get('status')}")
-            except Exception as e_bland:
-                app.logger.error(f"Lỗi khi chạy auto_simplex (Bland): {e_bland}", exc_info=True)
-                result_bland = {
-                    'status': 'Lỗi (Error)', 'z': "N/A", 'solution': {}, 'steps': {},
-                    'error_message': f"Lỗi khi thực thi Đơn hình Bland: {str(e_bland)}",
-                    'parameter_conditions': ""
-                }
-            app.logger.info("Bắt đầu giải bằng Đơn hình 2 Pha...")
-            result_two_phase = simplex_two_phase(
-                A_orig=A_matrix, b_orig=b_vector, c_orig=c_coeffs,
-                constraint_types_orig=constraint_types_list,
-                objective_type_orig=objective_str,
-                variable_types_orig=variable_types_list
-            )
-            app.logger.info(f"Kết quả Đơn hình 2 Pha: {result_two_phase.get('status')}")
 
-        # **MODIFIED**: Lưu trữ các bước gốc để vẽ đồ thị
+        app.logger.info("Giải bằng phương pháp Đơn hình 2 Pha...")
+        result_two_phase = simplex_two_phase(
+            A_orig=A_matrix, b_orig=b_vector, c_orig=c_coeffs,
+            constraint_types_orig=constraint_types_list,
+            objective_type_orig=objective_str,
+            variable_types_orig=variable_types_list
+        )
+        app.logger.info(f"Kết quả Đơn hình 2 Pha: {result_two_phase.get('status')}")
+
         original_steps_bland = result_bland.get('steps') if result_bland else None
         original_steps_two_phase = result_two_phase.get('steps') if result_two_phase else None
 
-        # **MODIFIED**: Hàm trợ giúp để thêm từ vựng vào tiêu đề bước
-        def add_vocab_to_step_titles(steps_dict):
-            if not steps_dict: return {}
-            new_steps = {}
-            step_keys = list(steps_dict.keys())
-            for i, title in enumerate(step_keys):
-                step_data = steps_dict[title]
-                coords = step_data.get('coords')
-                new_title = title
-                if coords and len(coords) == 2:
-                    point_letter = 'O' if i == 0 else chr(ord('A') + i - 1)
-                    vocab_str = f"{point_letter}({coords[0]:.2f}, {coords[1]:.2f})"
-                    new_title = f"{title}: {vocab_str}"
-                # Giá trị của từ điển mới chỉ là bảng để hiển thị trong HTML
-                new_steps[new_title] = step_data.get('tableau', step_data)
-            return new_steps
-
-        # **MODIFIED**: Tạo từ điển các bước mới để hiển thị, giữ lại bản gốc để vẽ
-        if result_bland:
-            result_bland['steps'] = add_vocab_to_step_titles(original_steps_bland)
-        if result_two_phase:
-            result_two_phase['steps'] = add_vocab_to_step_titles(original_steps_two_phase)
-
+        # Hiển thị kết quả
         plot_data_base64 = None
         plot_error_message = None
         if num_vars == 2:
             app.logger.info("Tạo đồ thị cho bài toán 2 biến...")
             solution_for_plot = {}
             status_for_plot = "Lỗi (Error)"
-            steps_for_plot = None # Sử dụng các bước gốc
+            steps_for_plot = None
 
-            # **MODIFIED**: Ưu tiên kết quả và các bước gốc từ two_phase nếu tối ưu, sau đó đến bland
-            if result_two_phase and (result_two_phase.get('status', '').lower().startswith('tối ưu') or \
-               result_two_phase.get('status', '').lower().startswith('vô số nghiệm')):
+            # Ưu tiên kết quả từ 2 Pha vì tổng quát hơn
+            if result_two_phase and (result_two_phase.get('status', '').lower().startswith('tối ưu') or result_two_phase.get('status', '').lower().startswith('vô số nghiệm')):
                 solution_for_plot = result_two_phase.get('solution', {})
                 status_for_plot = result_two_phase.get('status')
-                steps_for_plot = original_steps_two_phase # Sử dụng bản gốc
-            elif result_bland and (result_bland.get('status', '').lower().startswith('tối ưu') or \
-                                   result_bland.get('status', '').lower().startswith('vô số nghiệm')):
+                # Lấy steps từ 2-Pha để vẽ đường đi nếu có
+                steps_for_plot = result_two_phase.get('steps')
+            elif result_bland and (result_bland.get('status', '').lower().startswith('tối ưu') or result_bland.get('status', '').lower().startswith('vô số nghiệm')):
                 solution_for_plot = result_bland.get('solution', {})
                 status_for_plot = result_bland.get('status')
-                steps_for_plot = original_steps_bland # Sử dụng bản gốc
+                steps_for_plot = result_bland.get('steps')
 
             try:
                 plot_data_base64 = create_plot(
@@ -227,7 +184,7 @@ def solve():
                     solution_for_plot,
                     variable_types_list,
                     status_for_plot,
-                    steps_history_for_plot=steps_for_plot # **MODIFIED**
+                    steps_history_for_plot=steps_for_plot
                 )
                 app.logger.info("Tạo đồ thị thành công.")
             except Exception as plot_error:
@@ -235,8 +192,8 @@ def solve():
                 plot_error_message = f"Không thể tạo biểu đồ: {str(plot_error)[:150]}..."
 
         return render_template('result.html',
-                               result_bland=result_bland, # Chứa các bước đã sửa đổi để hiển thị
-                               result_two_phase=result_two_phase, # Chứa các bước đã sửa đổi để hiển thị
+                               result_bland=result_bland,
+                               result_two_phase=result_two_phase,
                                plot_data=plot_data_base64,
                                plot_error_message=plot_error_message,
                                num_vars=num_vars)
@@ -261,21 +218,34 @@ def create_plot(A_orig, b_orig, constraint_types_orig, solution, variable_types,
 
     has_valid_solution_for_plot = False
     x_opt, y_opt = None, None
-    if solution and (status_str.lower().startswith('tối ưu') or status_str.lower().startswith('vô số nghiệm')):
+    
+    # === FIX: SỬA LỖI ĐỌC DỮ LIỆU NGHIỆM TỐI ƯU ===
+    if solution and solution.get('solution') and (status_str.lower().startswith('tối ưu') or status_str.lower().startswith('vô số nghiệm')):
         try:
-            x1_val_str = solution.get('x1')
-            x2_val_str = solution.get('x2')
-            if x1_val_str is not None and x2_val_str is not None:
-                x_opt = parse_number(str(x1_val_str)) if isinstance(x1_val_str, (str, float, int)) else float(x1_val_str)
-                y_opt = parse_number(str(x2_val_str)) if isinstance(x2_val_str, (str, float, int)) else float(x2_val_str)
-                has_valid_solution_for_plot = True
-        except (ValueError, TypeError):
-            has_valid_solution_for_plot = False
-            app.logger.warning(f"Không thể chuyển đổi nghiệm tối ưu sang số để vẽ: x1='{solution.get('x1')}', x2='{solution.get('x2')}'")
+            # Chuyển đổi cấu trúc list of dicts thành một dict đơn giản để dễ truy cập
+            solution_dict = {item['variable']: item['expression'] for item in solution['solution']}
+            
+            x1_val_str = solution_dict.get('x1')
+            x2_val_str = solution_dict.get('x2')
 
+            if x1_val_str is not None and x2_val_str is not None:
+                # Đối với trường hợp vô số nghiệm (biểu thức chứa tham số),
+                # ta chỉ vẽ một điểm đại diện bằng cách cố gắng parse hằng số từ biểu thức.
+                if isinstance(x1_val_str, str) and any(c.isalpha() for c in x1_val_str):
+                     # Lấy phần hằng số (thường là số hạng đầu tiên)
+                     x1_val_str = x1_val_str.split()[0]
+                if isinstance(x2_val_str, str) and any(c.isalpha() for c in x2_val_str):
+                     x2_val_str = x2_val_str.split()[0]
+
+                x_opt = parse_number(str(x1_val_str))
+                y_opt = parse_number(str(x2_val_str))
+                has_valid_solution_for_plot = True
+        except (ValueError, TypeError, IndexError):
+            has_valid_solution_for_plot = False
+            app.logger.warning(f"Không thể chuyển đổi nghiệm tối ưu sang số để vẽ: solution data='{solution}'")
+    # === END FIX ===
 
     plot_points_x, plot_points_y = [], []
-    # **MODIFIED**: Luôn bắt đầu từ gốc tọa độ nếu có các bước
     if steps_history_for_plot:
         plot_points_x.append(0.0)
         plot_points_y.append(0.0)
@@ -284,13 +254,22 @@ def create_plot(A_orig, b_orig, constraint_types_orig, solution, variable_types,
         plot_points_x.append(x_opt)
         plot_points_y.append(y_opt)
 
-    # Thêm các điểm từ đường đi Simplex vào danh sách để xác định giới hạn vẽ
+    # Lấy tọa độ từ các bước lặp để xác định phạm vi của biểu đồ
     if steps_history_for_plot:
         for step_data in steps_history_for_plot.values():
-            coords = step_data.get('coords')
+            # Cấu trúc của steps_history từ simplex_bland và simplex_two_phase khác nhau
+            coords = None
+            if 'coords' in step_data: # Từ simplex_bland
+                coords = step_data.get('coords')
+            elif 'tableau' in step_data: # Từ simplex_two_phase (cần tính toán)
+                # Phần này phức tạp hơn, tạm thời bỏ qua để tập trung vào lỗi chính
+                # Nếu cần vẽ đường đi cho 2-Pha, cần thêm logic ở đây
+                pass
+            
             if coords and len(coords) == 2:
                 plot_points_x.append(coords[0])
                 plot_points_y.append(coords[1])
+
 
     for i in range(len(A_orig)):
         if abs(A_orig[i][1]) > APP_TOLERANCE:
@@ -343,7 +322,7 @@ def create_plot(A_orig, b_orig, constraint_types_orig, solution, variable_types,
         val = A_orig[i][0] * X_mesh + A_orig[i][1] * Y_mesh
         if constraint_types_orig[i] == '<=': feasible_mask &= (val <= b_orig[i] + APP_TOLERANCE)
         elif constraint_types_orig[i] == '>=': feasible_mask &= (val >= b_orig[i] - APP_TOLERANCE)
-        elif constraint_types_orig[i] == '=': feasible_mask &= (np.abs(val - b_orig[i]) < APP_TOLERANCE)
+        elif constraint_types_orig[i] == '=': feasible_mask &= (np.abs(val - b_orig[i]) < 0.01) # Dung sai cho ràng buộc bằng
 
     if variable_types[0] == '>=0': feasible_mask &= (X_mesh >= -APP_TOLERANCE)
     elif variable_types[0] == '<=0': feasible_mask &= (X_mesh <= APP_TOLERANCE)
@@ -378,27 +357,6 @@ def create_plot(A_orig, b_orig, constraint_types_orig, solution, variable_types,
     if variable_types[1] == '>=0': ax.axhline(y=0, color='gray', linestyle='--', lw=1, label='x₂ ≥ 0')
     elif variable_types[1] == '<=0': ax.axhline(y=0, color='gray', linestyle='--', lw=1, label='x₂ ≤ 0')
 
-    # **MODIFIED**: Vẽ đường đi của thuật toán Simplex
-    if steps_history_for_plot:
-        path_coords = []
-        for step_data in steps_history_for_plot.values():
-            coords = step_data.get('coords')
-            if coords and len(coords) == 2:
-                path_coords.append(coords)
-
-        if path_coords:
-            path = np.array(path_coords)
-            # Vẽ đường nối các điểm
-            ax.plot(path[:, 0], path[:, 1], 'o-', color='dodgerblue', markerfacecolor='lightblue',
-                    markersize=8, lw=2, zorder=4, label='Đường đi Simplex')
-            # Đánh dấu các điểm
-            for i, (x, y) in enumerate(path):
-                # Tạo nhãn O, A, B, C...
-                label = f' {chr(ord("A") + i - 1)}' if i > 0 else ' O'
-                ax.text(x + (calc_x_max - calc_x_min)*0.01, y, label,
-                        color='navy', fontsize=12, ha='left', va='center', weight='bold')
-
-
     if has_valid_solution_for_plot:
         ax.plot(x_opt, y_opt, 'o', color='red', markersize=10, markeredgecolor='black',
                 label=f'Tối ưu: ({x_opt:.2f}, {y_opt:.2f})', zorder=5)
@@ -432,16 +390,13 @@ def create_plot(A_orig, b_orig, constraint_types_orig, solution, variable_types,
 
 
 if __name__ == '__main__':
-    # Make sure you have a 'templates' folder with 'index.html' and 'result.html'
-    # For development, create simple placeholder files if they don't exist.
     if not os.path.exists('templates'):
         os.makedirs('templates')
-    if not os.path.exists('templates/index.html'):
-        with open('templates/index.html', 'w') as f:
-            f.write('<h1>Simplex Solver Input</h1><p>Placeholder for input form.</p>') # Minimal placeholder
-    if not os.path.exists('templates/result.html'):
-        with open('templates/result.html', 'w') as f:
-             f.write('<h1>Simplex Solver Result</h1><p>Placeholder for results.</p>') # Minimal placeholder
+    # Các file template nên được tạo riêng biệt, không nên viết code HTML cứng trong Python
+    # if not os.path.exists('templates/index.html'):
+    #     ...
+    # if not os.path.exists('templates/result.html'):
+    #     ...
 
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_DEBUG', 'True').lower() == 'true')
