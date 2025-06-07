@@ -85,11 +85,12 @@ Mở trình duyệt web của bạn và truy cập vào địa chỉ sau:
 Bây giờ bạn đã có thể bắt đầu sử dụng công cụ để giải các bài toán QHTT của mình!
 
 ## 📂 Cấu trúc Thư mục
-.
+```
 ├── app.py                     # File chính của Flask, xử lý logic web
 ├── simplex_bland.py           # Module chứa thuật toán Đơn hình (Quy tắc Bland)
 ├── simplex_two_phase.py       # Module chứa thuật toán Đơn hình Hai Pha
 ├── requirements.txt           # Danh sách các thư viện Python cần thiết
-└── templates/
+└── templates\
     ├── index.html             # Giao diện trang nhập liệu
     └── result.html            # Giao diện trang hiển thị kết quả
+```
